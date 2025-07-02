@@ -3,6 +3,8 @@
 #include "JackClient.h"
 #include "HAL/PlatformTime.h"
 #include "Misc/DateTime.h"
+#include "HAL/PlatformProcess.h"
+#include "Misc/Paths.h"
 
 FJackClient::FJackClient()
 	: JackClient(nullptr)
@@ -17,6 +19,163 @@ FJackClient::~FJackClient()
 	Disconnect();
 }
 
+bool FJackClient::CheckJackServerRunning()
+{
+	// Try to connect to an existing Jack server to check if one is running
+	jack_status_t Status;
+	jack_client_t* TestClient = jack_client_open("test_connection", JackNullOption, &Status);
+	
+	if (TestClient != nullptr)
+	{
+		jack_client_close(TestClient);
+		UE_LOG(LogTemp, Log, TEXT("JackClient: Found existing Jack server running"));
+		return true;
+	}
+	else
+	{
+		UE_LOG(LogTemp, Log, TEXT("JackClient: No Jack server currently running"));
+		return false;
+	}
+}
+
+bool FJackClient::KillJackServer()
+{
+	UE_LOG(LogTemp, Log, TEXT("JackClient: Attempting to kill existing Jack server..."));
+	
+	// Use cmd to execute taskkill to terminate any running jackd processes
+	FString Command = TEXT("cmd");
+	FString Params = TEXT("/c taskkill /f /im jackd.exe");
+	FString Output;
+	FString ErrorOutput;
+	int32 ReturnCode = 0;
+	
+	bool bSuccess = FPlatformProcess::ExecProcess(*Command, *Params, &ReturnCode, &Output, &ErrorOutput);
+	
+	if (bSuccess && ReturnCode == 0)
+	{
+		UE_LOG(LogTemp, Log, TEXT("JackClient: Successfully killed existing Jack server"));
+		return true;
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("JackClient: Failed to kill Jack server or no server was running. Return code: %d"), ReturnCode);
+		// This might be expected if no server was running
+		return true;
+	}
+}
+
+bool FJackClient::StartJackServer(const FString& JackdPath)
+{
+	UE_LOG(LogTemp, Log, TEXT("JackClient: Starting Jack server with custom parameters..."));
+	
+	// Check if jackd.exe exists at the specified path
+	if (!FPaths::FileExists(JackdPath))
+	{
+		UE_LOG(LogTemp, Error, TEXT("JackClient: Jack server executable not found at: %s"), *JackdPath);
+		return false;
+	}
+	
+	// Build the command parameters
+	FString Params = TEXT("-S -X winmme -d portaudio -r 48000 -p 512");
+	
+	// Start the Jack server process
+	FString Output;
+	int32 ReturnCode = 0;
+	
+	// Start the process in the background
+	FProcHandle ProcessHandle = FPlatformProcess::CreateProc(*JackdPath, *Params, true, false, false, nullptr, 0, nullptr, nullptr);
+	
+	if (ProcessHandle.IsValid())
+	{
+		UE_LOG(LogTemp, Log, TEXT("JackClient: Jack server process started successfully"));
+		
+		// Give the server a moment to start up
+		FPlatformProcess::Sleep(2.0f);
+		
+		// Verify the server is running
+		if (CheckJackServerRunning())
+		{
+			UE_LOG(LogTemp, Log, TEXT("JackClient: Jack server is now running and ready for connections"));
+			return true;
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("JackClient: Jack server process started but server is not responding"));
+			return false;
+		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("JackClient: Failed to start Jack server process"));
+		return false;
+	}
+}
+
+bool FJackClient::StartJackServerWithParameters(const FString& JackdPath, int32 SampleRate, int32 BufferSize, const FString& Driver)
+{
+	UE_LOG(LogTemp, Log, TEXT("JackClient: Starting Jack server with custom parameters - Sample Rate: %d, Buffer Size: %d, Driver: %s"), SampleRate, BufferSize, *Driver);
+	
+	// Check if jackd.exe exists at the specified path
+	if (!FPaths::FileExists(JackdPath))
+	{
+		UE_LOG(LogTemp, Error, TEXT("JackClient: Jack server executable not found at: %s"), *JackdPath);
+		return false;
+	}
+	
+	// Build the command parameters
+	FString Params = FString::Printf(TEXT("-S -X winmme -d %s -r %d -p %d"), *Driver, SampleRate, BufferSize);
+	
+	// Start the Jack server process
+	FString Output;
+	int32 ReturnCode = 0;
+	
+	// Start the process in the background
+	FProcHandle ProcessHandle = FPlatformProcess::CreateProc(*JackdPath, *Params, true, false, false, nullptr, 0, nullptr, nullptr);
+	
+	if (ProcessHandle.IsValid())
+	{
+		UE_LOG(LogTemp, Log, TEXT("JackClient: Jack server process started successfully with custom parameters"));
+		
+		// Give the server a moment to start up
+		FPlatformProcess::Sleep(2.0f);
+		
+		// Verify the server is running
+		if (CheckJackServerRunning())
+		{
+			UE_LOG(LogTemp, Log, TEXT("JackClient: Jack server is now running and ready for connections"));
+			return true;
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("JackClient: Jack server process started but server is not responding"));
+			return false;
+		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("JackClient: Failed to start Jack server process"));
+		return false;
+	}
+}
+
+bool FJackClient::EnsureJackServerRunning(const FString& JackdPath)
+{
+	UE_LOG(LogTemp, Log, TEXT("JackClient: Ensuring Jack server is running with custom parameters..."));
+	
+	// Check if a server is already running
+	if (CheckJackServerRunning())
+	{
+		UE_LOG(LogTemp, Log, TEXT("JackClient: Found existing Jack server, killing it to restart with custom parameters"));
+		KillJackServer();
+		
+		// Give it a moment to fully shut down
+		FPlatformProcess::Sleep(1.0f);
+	}
+	
+	// Start the server with our custom parameters (using the default parameters from StartJackServer)
+	return StartJackServer(JackdPath);
+}
+
 bool FJackClient::Connect(const FString& ClientName)
 {
 	if (IsConnected())
@@ -27,11 +186,19 @@ bool FJackClient::Connect(const FString& ClientName)
 
 	ConnectionStatus = EJackConnectionStatus::Connecting;
 
+	// Ensure Jack server is running with our custom parameters
+	if (!EnsureJackServerRunning())
+	{
+		UE_LOG(LogTemp, Error, TEXT("JackClient: Failed to ensure Jack server is running"));
+		ConnectionStatus = EJackConnectionStatus::Failed;
+		return false;
+	}
+
 	// Convert FString to C string
 	FTCHARToUTF8 Convert(*ClientName);
 	const char* ClientNameStr = Convert.Get();
 
-	// Open connection to Jack server
+	// Open connection to Jack server (now we know it's running with our parameters)
 	jack_status_t Status;
 	JackClient = jack_client_open(ClientNameStr, JackNullOption, &Status);
 
@@ -42,17 +209,9 @@ bool FJackClient::Connect(const FString& ClientName)
 		return false;
 	}
 
-	// Check connection status
-	if (Status & JackServerStarted)
-	{
-		bServerWasStarted = true;
-		UE_LOG(LogTemp, Log, TEXT("JackClient: Jack server started by this client"));
-	}
-	else
-	{
-		bServerWasStarted = false;
-		UE_LOG(LogTemp, Log, TEXT("JackClient: Connected to existing Jack server"));
-	}
+	// Since we started the server ourselves, mark it as started by this client
+	bServerWasStarted = true;
+	UE_LOG(LogTemp, Log, TEXT("JackClient: Connected to Jack server (started by this client with custom parameters)"));
 
 	if (Status & JackNameNotUnique)
 	{

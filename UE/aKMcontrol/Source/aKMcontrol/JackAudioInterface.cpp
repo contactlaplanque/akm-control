@@ -3,6 +3,7 @@
 #include "JackAudioInterface.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "HAL/PlatformProcess.h"
 
 // Sets default values
 AJackAudioInterface::AJackAudioInterface()
@@ -17,9 +18,38 @@ void AJackAudioInterface::BeginPlay()
 {
 	Super::BeginPlay();
 	
-	// Try to connect to Jack automatically on BeginPlay
+	UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Starting Jack audio system..."));
+	
+	// Ensure Jack server is running with our custom parameters
+	if (bAutoStartServer)
+	{
+		// Check if a server is already running and kill it
+		if (CheckJackServerRunning())
+		{
+			UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Found existing Jack server, killing it to restart with custom parameters"));
+			KillJackServer();
+			FPlatformProcess::Sleep(1.0f); // Give it time to shut down
+		}
+		
+		// Start the server with our custom parameters
+		if (StartJackServerWithParameters(JackServerPath, SampleRate, BufferSize, AudioDriver))
+		{
+			UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Jack server started with custom parameters"));
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("JackAudioInterface: Failed to start Jack server with custom parameters"));
+			return;
+		}
+	}
+	
+	// Connect to the Jack server
+	UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Jack server is ready, connecting client..."));
+	
 	if (ConnectToJack())
 	{
+		UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Successfully connected to Jack server"));
+		
 		// Register 64 I/O ports after successful connection
 		if (RegisterAudioPorts(64, 64, TEXT("unreal")))
 		{
@@ -29,6 +59,10 @@ void AJackAudioInterface::BeginPlay()
 		{
 			UE_LOG(LogTemp, Error, TEXT("JackAudioInterface: Failed to register audio ports"));
 		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("JackAudioInterface: Failed to connect to Jack server"));
 	}
 }
 
@@ -79,6 +113,31 @@ void AJackAudioInterface::DisconnectFromJack()
 bool AJackAudioInterface::IsConnectedToJack() const
 {
 	return JackClient.IsConnected();
+}
+
+bool AJackAudioInterface::CheckJackServerRunning()
+{
+	return JackClient.CheckJackServerRunning();
+}
+
+bool AJackAudioInterface::KillJackServer()
+{
+	return JackClient.KillJackServer();
+}
+
+bool AJackAudioInterface::StartJackServer(const FString& JackdPath)
+{
+	return JackClient.StartJackServer(JackdPath);
+}
+
+bool AJackAudioInterface::EnsureJackServerRunning(const FString& JackdPath)
+{
+	return JackClient.EnsureJackServerRunning(JackdPath);
+}
+
+bool AJackAudioInterface::StartJackServerWithParameters(const FString& JackdPath, int32 InSampleRate, int32 InBufferSize, const FString& InDriver)
+{
+	return JackClient.StartJackServerWithParameters(JackdPath, InSampleRate, InBufferSize, InDriver);
 }
 
 FString AJackAudioInterface::GetJackClientName() const
@@ -194,7 +253,8 @@ void AJackAudioInterface::DisplayJackInfoOnScreen()
 		// Server startup information
 		if (WasJackServerStarted())
 		{
-			DebugText += TEXT("Server: Started by this app\n");
+			DebugText += FString::Printf(TEXT("Server: Started by this app with custom parameters\n"));
+			DebugText += FString::Printf(TEXT("  Sample Rate: %d Hz, Buffer Size: %d, Driver: %s\n"), SampleRate, BufferSize, *AudioDriver);
 		}
 		else
 		{

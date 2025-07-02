@@ -94,7 +94,6 @@ UE/aKMcontrol/SourceArt/**/*.tga
 
 # Binary Files - COMPLETE IGNORE
 UE/aKMcontrol/Binaries/
-UE/aKMcontrol/Plugins/**/Binaries/
 
 # Builds
 UE/aKMcontrol/Build/

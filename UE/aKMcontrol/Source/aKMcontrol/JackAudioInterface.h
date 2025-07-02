@@ -35,6 +35,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Jack Audio")
 	bool IsConnectedToJack() const;
 
+	// Jack server management
+	UFUNCTION(BlueprintCallable, Category = "Jack Audio")
+	bool CheckJackServerRunning();
+
+	UFUNCTION(BlueprintCallable, Category = "Jack Audio")
+	bool KillJackServer();
+
+	UFUNCTION(BlueprintCallable, Category = "Jack Audio")
+	bool StartJackServer(const FString& JackdPath = TEXT("C:/Program Files/JACK2/jackd.exe"));
+
+	UFUNCTION(BlueprintCallable, Category = "Jack Audio")
+	bool EnsureJackServerRunning(const FString& JackdPath = TEXT("C:/Program Files/JACK2/jackd.exe"));
+
+	UFUNCTION(BlueprintCallable, Category = "Jack Audio")
+	bool StartJackServerWithParameters(const FString& JackdPath, int32 InSampleRate, int32 InBufferSize, const FString& InDriver = TEXT("portaudio"));
+
 	// Jack information
 	UFUNCTION(BlueprintCallable, Category = "Jack Audio")
 	FString GetJackClientName() const;
@@ -93,6 +109,22 @@ public:
 protected:
 	// Jack client instance (regular C++ class, not a UObject)
 	FJackClient JackClient;
+
+	// Jack server configuration
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Server Configuration")
+	FString JackServerPath = TEXT("C:/Program Files/JACK2/jackd.exe");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Server Configuration")
+	int32 SampleRate = 48000;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Server Configuration")
+	int32 BufferSize = 512;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Server Configuration")
+	FString AudioDriver = TEXT("portaudio");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Server Configuration")
+	bool bAutoStartServer = true;
 
 	// Debug display
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio")

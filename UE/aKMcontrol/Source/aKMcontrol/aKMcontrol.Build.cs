@@ -29,9 +29,6 @@ public class aKMcontrol : ModuleRules
 			// Add Jack library directory
 			PublicAdditionalLibraries.Add("C:/Program Files/JACK2/lib/libjack64.lib");
 			
-			// Note: libjack64.dll is not present in the installation
-			// We'll use static linking for now
-			// If dynamic linking is needed later, we'll need to locate the DLL
 		}
 	}
 }

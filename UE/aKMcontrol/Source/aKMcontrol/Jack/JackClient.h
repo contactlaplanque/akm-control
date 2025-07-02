@@ -17,6 +17,13 @@ public:
 	FJackClient();
 	~FJackClient();
 
+	// Server management
+	bool CheckJackServerRunning();
+	bool KillJackServer();
+	bool StartJackServer(const FString& JackdPath = TEXT("C:/Program Files/JACK2/jackd.exe"));
+	bool StartJackServerWithParameters(const FString& JackdPath, int32 SampleRate, int32 BufferSize, const FString& Driver = TEXT("portaudio"));
+	bool EnsureJackServerRunning(const FString& JackdPath = TEXT("C:/Program Files/JACK2/jackd.exe"));
+
 	// Connection management
 	bool Connect(const FString& ClientName = TEXT("UnrealJackClient"));
 	void Disconnect();
