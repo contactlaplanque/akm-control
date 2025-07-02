@@ -56,11 +56,16 @@ bool FJackClient::KillJackServer()
 		UE_LOG(LogTemp, Log, TEXT("JackClient: Successfully killed existing Jack server"));
 		return true;
 	}
+	else if (ReturnCode == 128)
+	{
+		// Return code 128 means "no processes found" - this is normal if no server was running
+		UE_LOG(LogTemp, Log, TEXT("JackClient: No Jack server was running to kill"));
+		return true;
+	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("JackClient: Failed to kill Jack server or no server was running. Return code: %d"), ReturnCode);
-		// This might be expected if no server was running
-		return true;
+		UE_LOG(LogTemp, Warning, TEXT("JackClient: Failed to kill Jack server. Return code: %d"), ReturnCode);
+		return false;
 	}
 }
 
@@ -186,10 +191,10 @@ bool FJackClient::Connect(const FString& ClientName)
 
 	ConnectionStatus = EJackConnectionStatus::Connecting;
 
-	// Ensure Jack server is running with our custom parameters
-	if (!EnsureJackServerRunning())
+	// Check if Jack server is running (don't restart if it's already running)
+	if (!CheckJackServerRunning())
 	{
-		UE_LOG(LogTemp, Error, TEXT("JackClient: Failed to ensure Jack server is running"));
+		UE_LOG(LogTemp, Error, TEXT("JackClient: Jack server is not running"));
 		ConnectionStatus = EJackConnectionStatus::Failed;
 		return false;
 	}
@@ -198,7 +203,7 @@ bool FJackClient::Connect(const FString& ClientName)
 	FTCHARToUTF8 Convert(*ClientName);
 	const char* ClientNameStr = Convert.Get();
 
-	// Open connection to Jack server (now we know it's running with our parameters)
+	// Open connection to Jack server
 	jack_status_t Status;
 	JackClient = jack_client_open(ClientNameStr, JackNullOption, &Status);
 
