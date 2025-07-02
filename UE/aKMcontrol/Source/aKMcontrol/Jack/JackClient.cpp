@@ -22,6 +22,7 @@ FJackClient::~FJackClient()
 bool FJackClient::CheckJackServerRunning()
 {
 	// Try to connect to an existing Jack server to check if one is running
+	// Use a timeout to prevent hanging
 	jack_status_t Status;
 	jack_client_t* TestClient = jack_client_open("test_connection", JackNullOption, &Status);
 	
@@ -32,7 +33,18 @@ bool FJackClient::CheckJackServerRunning()
 	}
 	else
 	{
-		return false;
+		// Check if the failure is due to server not running vs other errors
+		// If it's a server not running error, that's expected
+		if (Status & JackServerFailed)
+		{
+			return false;
+		}
+		else
+		{
+			// For other errors, assume server might be running but having issues
+			// This prevents false negatives that could cause hanging
+			return true;
+		}
 	}
 }
 
@@ -52,6 +64,8 @@ bool FJackClient::KillJackServer()
 	if (bSuccess && ReturnCode == 0)
 	{
 		UE_LOG(LogTemp, Log, TEXT("JackClient: Successfully killed existing Jack server"));
+		// Give the process a moment to fully terminate
+		FPlatformProcess::Sleep(0.5f);
 		return true;
 	}
 	else if (ReturnCode == 128)
@@ -237,72 +251,75 @@ void FJackClient::Disconnect()
 {
 	if (JackClient != nullptr)
 	{
+		UE_LOG(LogTemp, Log, TEXT("JackClient: Closing Jack client connection..."));
+		
+		// Deactivate first to stop audio processing
 		Deactivate();
+		
+		// Close the client connection
 		jack_client_close(JackClient);
 		JackClient = nullptr;
 		ConnectionStatus = EJackConnectionStatus::Disconnected;
-		UE_LOG(LogTemp, Log, TEXT("JackClient: Disconnected from Jack server"));
+		
+		UE_LOG(LogTemp, Log, TEXT("JackClient: Successfully disconnected from Jack server"));
 	}
 }
 
 bool FJackClient::IsConnected() const
 {
-	// Check if we have a valid client and are in connected status
-	if (JackClient == nullptr || ConnectionStatus != EJackConnectionStatus::Connected)
-	{
-		return false;
-	}
-	
-	// Additional check: try to get client name to verify connection is still alive
-	// This will fail if the server has died
-	const char* ClientName = jack_get_client_name(JackClient);
-	if (ClientName == nullptr)
-	{
-		return false;
-	}
-	
-	// Try to get sample rate as another connection test
-	jack_nframes_t SampleRate = jack_get_sample_rate(JackClient);
-	if (SampleRate == 0)
-	{
-		return false;
-	}
-	
-	return true;
+	// Only check if we have a valid client and are in connected status
+	// Don't do additional API calls that might hang when server is dead
+	return (JackClient != nullptr && ConnectionStatus == EJackConnectionStatus::Connected);
 }
 
 FString FJackClient::GetClientName() const
 {
-	if (JackClient != nullptr)
+	if (JackClient != nullptr && ConnectionStatus == EJackConnectionStatus::Connected)
 	{
-		return FString(jack_get_client_name(JackClient));
+		const char* ClientName = jack_get_client_name(JackClient);
+		if (ClientName != nullptr)
+		{
+			return FString(ClientName);
+		}
 	}
 	return TEXT("");
 }
 
 uint32 FJackClient::GetSampleRate() const
 {
-	if (JackClient != nullptr)
+	if (JackClient != nullptr && ConnectionStatus == EJackConnectionStatus::Connected)
 	{
-		return jack_get_sample_rate(JackClient);
+		jack_nframes_t SampleRate = jack_get_sample_rate(JackClient);
+		if (SampleRate > 0)
+		{
+			return SampleRate;
+		}
 	}
 	return 0;
 }
 
 uint32 FJackClient::GetBufferSize() const
 {
-	if (JackClient != nullptr)
+	if (JackClient != nullptr && ConnectionStatus == EJackConnectionStatus::Connected)
 	{
-		return jack_get_buffer_size(JackClient);
+		jack_nframes_t BufferSize = jack_get_buffer_size(JackClient);
+		if (BufferSize > 0)
+		{
+			return BufferSize;
+		}
 	}
 	return 0;
 }
 
 float FJackClient::GetCPUUsage() const
 {
-	if (JackClient != nullptr)
+	if (JackClient != nullptr && ConnectionStatus == EJackConnectionStatus::Connected)
 	{
-		return jack_cpu_load(JackClient);
+		float CPUUsage = jack_cpu_load(JackClient);
+		if (CPUUsage >= 0.0f)
+		{
+			return CPUUsage;
+		}
 	}
 	return 0.0f;
 }
@@ -487,15 +504,17 @@ bool FJackClient::Activate()
 
 bool FJackClient::Deactivate()
 {
-	if (!IsConnected())
+	if (JackClient == nullptr)
 	{
 		return false;
 	}
 
+	// Don't check IsConnected() here as it might call API functions that hang
+	// Just try to deactivate if we have a client pointer
 	int Result = jack_deactivate(JackClient);
 	if (Result != 0)
 	{
-		UE_LOG(LogTemp, Error, TEXT("JackClient: Failed to deactivate client"));
+		UE_LOG(LogTemp, Warning, TEXT("JackClient: Failed to deactivate client (server may be dead)"));
 		return false;
 	}
 

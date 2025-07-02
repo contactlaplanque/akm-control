@@ -2,8 +2,11 @@
 
 
 #include "ImGuiActor.h"
-
 #include "SourceActor.h"
+#include "Kismet/GameplayStatics.h"
+#include "ImGuiModule.h"
+#include "Engine/Engine.h"
+#include "GameFramework/PlayerController.h"
 
 // Sets default values
 AImGuiActor::AImGuiActor()
@@ -17,6 +20,9 @@ AImGuiActor::AImGuiActor()
 void AImGuiActor::BeginPlay()
 {
 	Super::BeginPlay();
+	
+	// Ensure ImGui input is disabled by default so camera controls work
+	FImGuiModule::Get().GetProperties().SetInputEnabled(false);
 }
 
 // Called every frame
@@ -24,14 +30,134 @@ void AImGuiActor::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
 
-    // Actor Picking Variables
-    static TWeakObjectPtr<AActor> PickedActor = nullptr;
-    static bool bIsPickingActor = false;
-
-    static float location[3] = {0.0f, 0.0f, 0.0f};
-    static float locationPrevious[3] = {0.0f, 0.0f, 0.0f};
+    // Allow toggling ImGui input with G key
+    if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+    {
+        if (PC->WasInputKeyJustPressed(EKeys::G))
+        {
+            FImGuiModule::Get().GetProperties().ToggleInput();
+        }
+    }
 
     ImGui::Begin("Main Window");
+
+    // Show ImGui input capture status
+    bool bImGuiInputEnabled = FImGuiModule::Get().GetProperties().IsInputEnabled();
+    ImGui::TextColored(bImGuiInputEnabled ? ImVec4(1,1,0,1) : ImVec4(0.5f,0.5f,0.5f,1),
+        bImGuiInputEnabled ? "ImGui Input: ENABLED (G = camera control)" : "ImGui Input: DISABLED (G = ImGui control)");
+    ImGui::Separator();
+
+    // FPS Monitor
+    static float FPS = 0.0f;
+    static float FrameTime = 0.0f;
+    static float FPSUpdateTimer = 0.0f;
+    
+    FPSUpdateTimer += DeltaTime;
+    if (FPSUpdateTimer >= 0.5f) // Update every 0.5 seconds
+    {
+        FPS = 1.0f / DeltaTime;
+        FrameTime = DeltaTime * 1000.0f; // Convert to milliseconds
+        FPSUpdateTimer = 0.0f;
+    }
+    
+    ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "FPS Monitor");
+    ImGui::Text("FPS: %.1f", FPS);
+    ImGui::Text("Frame Time: %.2f ms", FrameTime);
+    
+    ImGui::Separator();
+
+    // Render Jack Audio Interface section
+    RenderJackAudioSection();
+    
+    ImGui::Separator();
+    
+    // Render existing Actor Picking section
+    RenderActorPickingSection();
+
+    ImGui::End();
+}
+
+void AImGuiActor::RenderJackAudioSection()
+{
+    ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Jack Audio Interface");
+    
+    // Find JackAudioInterface in the scene
+    AJackAudioInterface* JackInterface = FindJackAudioInterface();
+    
+    if (!JackInterface)
+    {
+        ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "No JackAudioInterface found in scene");
+        return;
+    }
+    
+    // Connection Status
+    EJackConnectionStatus Status = JackInterface->GetJackConnectionStatus();
+    ImVec4 StatusColor;
+    const char* StatusText;
+    
+    switch (Status)
+    {
+    case EJackConnectionStatus::Connected:
+        StatusColor = ImVec4(0.0f, 1.0f, 0.0f, 1.0f);
+        StatusText = "CONNECTED";
+        break;
+    case EJackConnectionStatus::Connecting:
+        StatusColor = ImVec4(1.0f, 1.0f, 0.0f, 1.0f);
+        StatusText = "CONNECTING";
+        break;
+    case EJackConnectionStatus::Disconnected:
+        StatusColor = ImVec4(1.0f, 0.5f, 0.0f, 1.0f);
+        StatusText = "DISCONNECTED";
+        break;
+    case EJackConnectionStatus::Failed:
+        StatusColor = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
+        StatusText = "FAILED";
+        break;
+    default:
+        StatusColor = ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
+        StatusText = "UNKNOWN";
+        break;
+    }
+    
+    ImGui::Text("Status: ");
+    ImGui::SameLine();
+    ImGui::TextColored(StatusColor, "%s", StatusText);
+    
+    if (JackInterface->IsConnectedToJack())
+    {
+        // Client Information - get values safely
+        FString ClientName = JackInterface->GetJackClientName();
+        int32 SampleRate = JackInterface->GetJackSampleRate();
+        int32 BufferSize = JackInterface->GetJackBufferSize();
+        float CPUUsage = JackInterface->GetJackCPUUsage();
+        int32 NumInputs = JackInterface->GetNumRegisteredInputPorts();
+        int32 NumOutputs = JackInterface->GetNumRegisteredOutputPorts();
+        
+        // Only display if we got valid values (prevents displaying zeros when server is dead)
+        if (!ClientName.IsEmpty() && SampleRate > 0 && BufferSize > 0)
+        {
+            ImGui::Text("Client: %s", TCHAR_TO_UTF8(*ClientName));
+            ImGui::Text("Sample Rate: %d Hz", SampleRate);
+            ImGui::Text("Buffer Size: %d frames", BufferSize);
+            ImGui::Text("CPU Usage: %.2f%%", CPUUsage);
+            ImGui::Text("Ports: %d in, %d out", NumInputs, NumOutputs);
+        }
+        else
+        {
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Connection appears to be dead");
+        }
+        
+        // Connection info displayed above
+    }
+    else
+    {
+        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Not connected to Jack server");
+    }
+}
+
+void AImGuiActor::RenderActorPickingSection()
+{
+    ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "Actor Picking");
 
     if (ImGui::Button("Toggle ImGui Input"))
     {
@@ -39,7 +165,6 @@ void AImGuiActor::Tick(float DeltaTime)
     }
 
     // Actor Picking
-
     const char* ButtonTitle = bIsPickingActor ? "Stop Picking" : "Start Picking";
     if (ImGui::Button(ButtonTitle))
     {
@@ -109,9 +234,9 @@ void AImGuiActor::Tick(float DeltaTime)
     {
         if (ASourceActor* SourceActor = Cast<ASourceActor>(Actor))
         {
-
-            ImGui::Text("Picked source:", *SourceActor->GetName());
-            ImGui::SameLine(); ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), " %ls", *SourceActor->GetName());
+            ImGui::Text("Picked source:");
+            ImGui::SameLine(); 
+            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), " %ls", *SourceActor->GetName());
 
             const FVector actorLocation = SourceActor->GetActorLocation();
 
@@ -120,18 +245,14 @@ void AImGuiActor::Tick(float DeltaTime)
             location[2] = actorLocation.Z;
 
             ImGui::InputFloat3("Location", location);
-
         }
-
     }
 
-    ImGui::End();
-
+    // Update actor location if changed
     if (AActor* Actor = PickedActor.Get())
     {
         if (ASourceActor* SourceActor = Cast<ASourceActor>(Actor))
         {
-
             if (location[0] != locationPrevious[0] || location[1] != locationPrevious[1] || location[2] != locationPrevious[2])
             {
                 locationPrevious[0] = location[0];
@@ -139,20 +260,33 @@ void AImGuiActor::Tick(float DeltaTime)
                 locationPrevious[2] = location[2];
 
                 SourceActor->SetActorLocation(FVector(location[0], location[1], location[2]));
-
-
             }
-
         }
-
     }
-
 }
-
-
 
 void AImGuiActor::ToggleImGuiInput()
 {
 	FImGuiModule::Get().GetProperties().ToggleInput();
+}
+
+AJackAudioInterface* AImGuiActor::FindJackAudioInterface()
+{
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        return nullptr;
+    }
+    
+    // Find the first JackAudioInterface in the scene
+    TArray<AActor*> FoundActors;
+    UGameplayStatics::GetAllActorsOfClass(World, AJackAudioInterface::StaticClass(), FoundActors);
+    
+    if (FoundActors.Num() > 0)
+    {
+        return Cast<AJackAudioInterface>(FoundActors[0]);
+    }
+    
+    return nullptr;
 }
 

@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "ImGuiModule.h"
+#include "JackAudioInterface.h"
 
 #include "ImGuiActor.generated.h"
 
@@ -27,5 +28,22 @@ public:
 
 	UFUNCTION(BlueprintCallable)
 	static void ToggleImGuiInput();
+
+	// Actor Picking Variables
+	TWeakObjectPtr<AActor> PickedActor;
+	bool bIsPickingActor = false;
+	float location[3] = {0.0f, 0.0f, 0.0f};
+	float locationPrevious[3] = {0.0f, 0.0f, 0.0f};
+
+private:
+	// Find JackAudioInterface in the scene
+	AJackAudioInterface* FindJackAudioInterface();
+	
+	// Render Jack audio interface section
+	void RenderJackAudioSection();
+	
+	// Render existing functionality section
+	void RenderActorPickingSection();
+	
 
 };

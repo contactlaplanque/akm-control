@@ -38,20 +38,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Jack Audio")
 	bool IsConnectedToJack() const;
 
-	// Jack server management
-	UFUNCTION(BlueprintCallable, Category = "Jack Audio")
+	// Jack server management (internal use only)
 	bool CheckJackServerRunning();
 
-	UFUNCTION(BlueprintCallable, Category = "Jack Audio")
 	bool KillJackServer();
 
-	UFUNCTION(BlueprintCallable, Category = "Jack Audio")
 	bool StartJackServer(const FString& JackdPath = TEXT("C:/Program Files/JACK2/jackd.exe"));
 
-	UFUNCTION(BlueprintCallable, Category = "Jack Audio")
 	bool EnsureJackServerRunning(const FString& JackdPath = TEXT("C:/Program Files/JACK2/jackd.exe"));
 
-	UFUNCTION(BlueprintCallable, Category = "Jack Audio")
 	bool StartJackServerWithParameters(const FString& JackdPath, int32 InSampleRate, int32 InBufferSize, const FString& InDriver = TEXT("portaudio"));
 
 	// Jack information
@@ -109,9 +104,29 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Jack Audio")
 	void DisplayJackInfoOnScreen();
 
-	// Debug connection test
-	UFUNCTION(BlueprintCallable, Category = "Jack Audio")
+	// Debug connection test (internal use only)
 	void TestJackConnection();
+
+	// Server monitoring (public for ImGui access)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Server Monitoring")
+	bool bMonitorServerStatus = true; // Enabled by default for automatic management
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Server Monitoring")
+	float ServerCheckInterval = 1.0f; // Check every second
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Server Monitoring")
+	bool bKillServerOnShutdown = true;
+
+	// Make these public for ImGui access
+	UPROPERTY(BlueprintReadOnly, Category = "Jack Audio|Server Monitoring")
+	FTimerHandle ServerStatusTimerHandle;
+
+	// Server monitoring methods (internal use only)
+	void StartServerMonitoring();
+
+	void StopServerMonitoring();
+
+	void OnServerStatusCheck();
 
 protected:
 	// Jack client instance (regular C++ class, not a UObject)
@@ -133,16 +148,6 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Server Configuration")
 	bool bAutoStartServer = true;
 
-	// Server monitoring
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Server Monitoring")
-	bool bMonitorServerStatus = true;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Server Monitoring")
-	float ServerCheckInterval = 1.0f; // Check every second
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Server Monitoring")
-	bool bKillServerOnShutdown = true;
-
 	// Debug display
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio")
 	bool bShowDebugInfo = true;
@@ -153,9 +158,6 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio")
 	FColor DebugTextColor = FColor::Green;
 
-	// Timer handle for server status checking
-	FTimerHandle ServerStatusTimerHandle;
-
 	// Connection state tracking for logging
 	bool bWasConnected = false;
 
@@ -163,5 +165,4 @@ private:
 	// Internal helper functions
 	void UpdateDebugDisplay();
 	void CheckServerStatus();
-	void OnServerStatusCheck();
 };

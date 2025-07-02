@@ -59,12 +59,8 @@ void AJackAudioInterface::BeginPlay()
 				UE_LOG(LogTemp, Error, TEXT("JackAudioInterface: Failed to register audio ports"));
 			}
 
-		// Start server monitoring if enabled
-		if (bMonitorServerStatus)
-		{
-			GetWorld()->GetTimerManager().SetTimer(ServerStatusTimerHandle, this, &AJackAudioInterface::OnServerStatusCheck, ServerCheckInterval, true);
-			UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Started server monitoring (checking every %.1f seconds)"), ServerCheckInterval);
-		}
+		// Always start server monitoring for automatic reconnection attempts
+		StartServerMonitoring();
 	}
 	else
 	{
@@ -99,11 +95,11 @@ void AJackAudioInterface::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// Update debug display if enabled
-	if (bShowDebugInfo)
-	{
-		UpdateDebugDisplay();
-	}
+	// Debug display is now handled by ImGui
+	// if (bShowDebugInfo)
+	// {
+	// 	UpdateDebugDisplay();
+	// }
 }
 
 bool AJackAudioInterface::ConnectToJack(const FString& ClientName)
@@ -133,8 +129,16 @@ bool AJackAudioInterface::ConnectToJack(const FString& ClientName)
 
 void AJackAudioInterface::DisconnectFromJack()
 {
+	UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Disconnecting from Jack server..."));
+	
+	// Stop server monitoring first
+	StopServerMonitoring();
+	
+	// Disconnect the Jack client
 	JackClient.Disconnect();
 	bWasConnected = false;
+	
+	UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Disconnected from Jack server"));
 }
 
 bool AJackAudioInterface::IsConnectedToJack() const
@@ -149,7 +153,26 @@ bool AJackAudioInterface::CheckJackServerRunning()
 
 bool AJackAudioInterface::KillJackServer()
 {
-	return JackClient.KillJackServer();
+	UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Killing Jack server..."));
+	
+	// Completely disable server monitoring to prevent hanging
+	StopServerMonitoring();
+	
+	// Force disconnect first to prevent hanging
+	// This is crucial - we need to close the Jack client before killing the server
+	DisconnectFromJack();
+	
+	// Give the disconnect a moment to complete
+	FPlatformProcess::Sleep(0.1f);
+	
+	bool bResult = JackClient.KillJackServer();
+	
+	UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Jack server kill result: %s"), bResult ? TEXT("SUCCESS") : TEXT("FAILED"));
+	
+	// Don't re-enable monitoring automatically - let user manually restart if needed
+	// This prevents the system from getting stuck in a hanging loop
+	
+	return bResult;
 }
 
 bool AJackAudioInterface::StartJackServer(const FString& JackdPath)
@@ -292,9 +315,9 @@ void AJackAudioInterface::UpdateDebugDisplay()
 
 void AJackAudioInterface::CheckServerStatus()
 {
-	// Check if Jack server is still running
-	bool bServerRunning = CheckJackServerRunning();
-	bool bClientConnected = IsConnectedToJack();
+	// Get current status
+	EJackConnectionStatus CurrentStatus = JackClient.GetConnectionStatus();
+	bool bClientConnected = (CurrentStatus == EJackConnectionStatus::Connected);
 	
 	// Track connection state changes for logging
 	if (bClientConnected != bWasConnected)
@@ -310,24 +333,43 @@ void AJackAudioInterface::CheckServerStatus()
 		bWasConnected = bClientConnected;
 	}
 	
-	// If server is not running but we think we're connected, force disconnect
-	if (!bServerRunning && bClientConnected)
+	// If we're not connected, try to reconnect automatically
+	if (!bClientConnected && bAutoStartServer)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("JackAudioInterface: Jack server stopped running, forcing disconnect"));
-		DisconnectFromJack();
-		bWasConnected = false;
-	}
-	
-	// Additional check: if we think we're connected but can't get basic info, we're probably disconnected
-	if (bClientConnected)
-	{
-		// Try to get sample rate - if this fails, we're disconnected
-		int32 CurrentSampleRate = GetJackSampleRate();
-		if (CurrentSampleRate == 0)
+		// Check if server is running
+		bool bServerRunning = CheckJackServerRunning();
+		
+		if (bServerRunning)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("JackAudioInterface: Cannot get sample rate, forcing disconnect"));
-			DisconnectFromJack();
-			bWasConnected = false;
+			// Server is running but we're not connected - try to connect
+			UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Server is running, attempting to reconnect..."));
+			if (ConnectToJack())
+			{
+				// Re-register ports after successful reconnection
+				if (RegisterAudioPorts(64, 64, TEXT("unreal")))
+				{
+					UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Successfully re-registered audio ports"));
+				}
+			}
+		}
+		else
+		{
+			// Server is not running - restart it automatically
+			UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Server not running, restarting automatically..."));
+			if (StartJackServerWithParameters(JackServerPath, SampleRate, BufferSize, AudioDriver))
+			{
+				UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Server restarted, attempting to connect..."));
+				// Give the server a moment to start
+				FPlatformProcess::Sleep(2.0f);
+				if (ConnectToJack())
+				{
+					// Register ports after successful connection
+					if (RegisterAudioPorts(64, 64, TEXT("unreal")))
+					{
+						UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Successfully registered audio ports after restart"));
+					}
+				}
+			}
 		}
 	}
 }
@@ -335,6 +377,32 @@ void AJackAudioInterface::CheckServerStatus()
 void AJackAudioInterface::OnServerStatusCheck()
 {
 	CheckServerStatus();
+}
+
+void AJackAudioInterface::StartServerMonitoring()
+{
+	if (!bMonitorServerStatus)
+	{
+		bMonitorServerStatus = true;
+		
+		// Use a longer interval to reduce the chance of hanging
+		float SafeCheckInterval = FMath::Max(ServerCheckInterval, 2.0f);
+		GetWorld()->GetTimerManager().SetTimer(ServerStatusTimerHandle, this, &AJackAudioInterface::OnServerStatusCheck, SafeCheckInterval, true);
+		UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Started server monitoring (checking every %.1f seconds)"), SafeCheckInterval);
+	}
+}
+
+void AJackAudioInterface::StopServerMonitoring()
+{
+	if (bMonitorServerStatus)
+	{
+		bMonitorServerStatus = false;
+		if (ServerStatusTimerHandle.IsValid())
+		{
+			GetWorld()->GetTimerManager().ClearTimer(ServerStatusTimerHandle);
+		}
+		UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Stopped server monitoring"));
+	}
 }
 
 void AJackAudioInterface::TestJackConnection()
