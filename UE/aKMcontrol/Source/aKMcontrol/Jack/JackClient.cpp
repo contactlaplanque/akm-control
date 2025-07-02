@@ -28,12 +28,10 @@ bool FJackClient::CheckJackServerRunning()
 	if (TestClient != nullptr)
 	{
 		jack_client_close(TestClient);
-		UE_LOG(LogTemp, Log, TEXT("JackClient: Found existing Jack server running"));
 		return true;
 	}
 	else
 	{
-		UE_LOG(LogTemp, Log, TEXT("JackClient: No Jack server currently running"));
 		return false;
 	}
 }
@@ -249,7 +247,28 @@ void FJackClient::Disconnect()
 
 bool FJackClient::IsConnected() const
 {
-	return JackClient != nullptr && ConnectionStatus == EJackConnectionStatus::Connected;
+	// Check if we have a valid client and are in connected status
+	if (JackClient == nullptr || ConnectionStatus != EJackConnectionStatus::Connected)
+	{
+		return false;
+	}
+	
+	// Additional check: try to get client name to verify connection is still alive
+	// This will fail if the server has died
+	const char* ClientName = jack_get_client_name(JackClient);
+	if (ClientName == nullptr)
+	{
+		return false;
+	}
+	
+	// Try to get sample rate as another connection test
+	jack_nframes_t SampleRate = jack_get_sample_rate(JackClient);
+	if (SampleRate == 0)
+	{
+		return false;
+	}
+	
+	return true;
 }
 
 FString FJackClient::GetClientName() const
@@ -515,6 +534,7 @@ void FJackClient::ShutdownCallback(void* Arg)
 	if (Client)
 	{
 		Client->ConnectionStatus = EJackConnectionStatus::Failed;
+		Client->JackClient = nullptr; // Clear the client pointer
 		UE_LOG(LogTemp, Warning, TEXT("JackClient: Jack server shutdown detected"));
 	}
 }

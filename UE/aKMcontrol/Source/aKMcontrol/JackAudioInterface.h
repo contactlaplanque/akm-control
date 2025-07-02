@@ -21,6 +21,9 @@ protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
 
+	// Called when the actor is being destroyed
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
 public:	
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
@@ -106,6 +109,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Jack Audio")
 	void DisplayJackInfoOnScreen();
 
+	// Debug connection test
+	UFUNCTION(BlueprintCallable, Category = "Jack Audio")
+	void TestJackConnection();
+
 protected:
 	// Jack client instance (regular C++ class, not a UObject)
 	FJackClient JackClient;
@@ -126,6 +133,16 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Server Configuration")
 	bool bAutoStartServer = true;
 
+	// Server monitoring
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Server Monitoring")
+	bool bMonitorServerStatus = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Server Monitoring")
+	float ServerCheckInterval = 1.0f; // Check every second
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Server Monitoring")
+	bool bKillServerOnShutdown = true;
+
 	// Debug display
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio")
 	bool bShowDebugInfo = true;
@@ -136,7 +153,15 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio")
 	FColor DebugTextColor = FColor::Green;
 
+	// Timer handle for server status checking
+	FTimerHandle ServerStatusTimerHandle;
+
+	// Connection state tracking for logging
+	bool bWasConnected = false;
+
 private:
 	// Internal helper functions
 	void UpdateDebugDisplay();
+	void CheckServerStatus();
+	void OnServerStatusCheck();
 };

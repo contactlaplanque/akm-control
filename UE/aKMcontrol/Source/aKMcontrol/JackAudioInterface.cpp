@@ -4,6 +4,7 @@
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "HAL/PlatformProcess.h"
+#include "TimerManager.h"
 
 // Sets default values
 AJackAudioInterface::AJackAudioInterface()
@@ -40,30 +41,57 @@ void AJackAudioInterface::BeginPlay()
 		{
 			UE_LOG(LogTemp, Error, TEXT("JackAudioInterface: Failed to start Jack server with custom parameters"));
 			return;
-		}
+				}
 	}
-	
+
 	// Connect to the Jack server
 	UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Jack server is ready, connecting client..."));
 	
-	if (ConnectToJack())
-	{
-		UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Successfully connected to Jack server"));
-		
-		// Register 64 I/O ports after successful connection
-		if (RegisterAudioPorts(64, 64, TEXT("unreal")))
+			if (ConnectToJack())
 		{
-			UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Successfully registered 64 I/O ports"));
-		}
-		else
+			// Register 64 I/O ports after successful connection
+			if (RegisterAudioPorts(64, 64, TEXT("unreal")))
+			{
+				UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Successfully registered 64 I/O ports"));
+			}
+			else
+			{
+				UE_LOG(LogTemp, Error, TEXT("JackAudioInterface: Failed to register audio ports"));
+			}
+
+		// Start server monitoring if enabled
+		if (bMonitorServerStatus)
 		{
-			UE_LOG(LogTemp, Error, TEXT("JackAudioInterface: Failed to register audio ports"));
+			GetWorld()->GetTimerManager().SetTimer(ServerStatusTimerHandle, this, &AJackAudioInterface::OnServerStatusCheck, ServerCheckInterval, true);
+			UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Started server monitoring (checking every %.1f seconds)"), ServerCheckInterval);
 		}
 	}
 	else
 	{
 		UE_LOG(LogTemp, Error, TEXT("JackAudioInterface: Failed to connect to Jack server"));
 	}
+}
+
+// Called when the actor is being destroyed
+void AJackAudioInterface::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	// Stop server monitoring
+	if (ServerStatusTimerHandle.IsValid())
+	{
+		GetWorld()->GetTimerManager().ClearTimer(ServerStatusTimerHandle);
+	}
+
+	// Kill Jack server if requested
+	if (bKillServerOnShutdown)
+	{
+		UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Shutting down, killing Jack server..."));
+		KillJackServer();
+	}
+
+	// Disconnect from Jack
+	DisconnectFromJack();
+
+	Super::EndPlay(EndPlayReason);
 }
 
 // Called every frame
@@ -84,8 +112,6 @@ bool AJackAudioInterface::ConnectToJack(const FString& ClientName)
 	
 	if (bSuccess)
 	{
-		UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Successfully connected to Jack server"));
-		
 		// Activate the client
 		if (JackClient.Activate())
 		{
@@ -95,6 +121,7 @@ bool AJackAudioInterface::ConnectToJack(const FString& ClientName)
 		{
 			UE_LOG(LogTemp, Error, TEXT("JackAudioInterface: Failed to activate Jack client"));
 		}
+		bWasConnected = true;
 	}
 	else
 	{
@@ -107,7 +134,7 @@ bool AJackAudioInterface::ConnectToJack(const FString& ClientName)
 void AJackAudioInterface::DisconnectFromJack()
 {
 	JackClient.Disconnect();
-	UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Disconnected from Jack server"));
+	bWasConnected = false;
 }
 
 bool AJackAudioInterface::IsConnectedToJack() const
@@ -249,40 +276,8 @@ void AJackAudioInterface::DisplayJackInfoOnScreen()
 		DebugText += FString::Printf(TEXT("Sample Rate: %d Hz\n"), GetJackSampleRate());
 		DebugText += FString::Printf(TEXT("Buffer Size: %d frames\n"), GetJackBufferSize());
 		DebugText += FString::Printf(TEXT("CPU Usage: %.2f%%\n"), GetJackCPUUsage());
-
-		// Server startup information
-		if (WasJackServerStarted())
-		{
-			DebugText += FString::Printf(TEXT("Server: Started by this app with custom parameters\n"));
-			DebugText += FString::Printf(TEXT("  Sample Rate: %d Hz, Buffer Size: %d, Driver: %s\n"), SampleRate, BufferSize, *AudioDriver);
-		}
-		else
-		{
-			DebugText += TEXT("Server: Connected to existing\n");
-		}
-
-		// Performance metrics
-		FJackPerformanceMetrics Metrics = GetJackPerformanceMetrics();
-		DebugText += FString::Printf(TEXT("XRuns: %d\n"), Metrics.XRuns);
-		DebugText += FString::Printf(TEXT("Audio Callback Time: %.2f ms\n"), Metrics.AudioCallbackTime);
-
-		// Registered ports information
-		DebugText += FString::Printf(TEXT("Registered Ports: %d in, %d out\n"), 
-			GetNumRegisteredInputPorts(), GetNumRegisteredOutputPorts());
-
-		// Available ports
-		TArray<FString> Ports = GetAvailableJackPorts();
-		DebugText += FString::Printf(TEXT("Available Ports: %d\n"), Ports.Num());
-		
-		// Show the first few ports as examples
-		for (int32 i = 0; i < FMath::Min(Ports.Num(), 5); i++)
-		{
-			DebugText += FString::Printf(TEXT("  %s\n"), *Ports[i]);
-		}
-		if (Ports.Num() > 5)
-		{
-			DebugText += TEXT("  ...\n");
-		}
+		DebugText += FString::Printf(TEXT("Input Ports: %d\n"), GetNumRegisteredInputPorts());
+		DebugText += FString::Printf(TEXT("Output Ports: %d\n"), GetNumRegisteredOutputPorts());
 	}
 
 	// Display on screen
@@ -293,5 +288,83 @@ void AJackAudioInterface::UpdateDebugDisplay()
 {
 	// Update debug display every frame if enabled
 	DisplayJackInfoOnScreen();
+}
+
+void AJackAudioInterface::CheckServerStatus()
+{
+	// Check if Jack server is still running
+	bool bServerRunning = CheckJackServerRunning();
+	bool bClientConnected = IsConnectedToJack();
+	
+	// Track connection state changes for logging
+	if (bClientConnected != bWasConnected)
+	{
+		if (bClientConnected)
+		{
+			UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Connected to Jack server"));
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("JackAudioInterface: Disconnected from Jack server"));
+		}
+		bWasConnected = bClientConnected;
+	}
+	
+	// If server is not running but we think we're connected, force disconnect
+	if (!bServerRunning && bClientConnected)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("JackAudioInterface: Jack server stopped running, forcing disconnect"));
+		DisconnectFromJack();
+		bWasConnected = false;
+	}
+	
+	// Additional check: if we think we're connected but can't get basic info, we're probably disconnected
+	if (bClientConnected)
+	{
+		// Try to get sample rate - if this fails, we're disconnected
+		int32 CurrentSampleRate = GetJackSampleRate();
+		if (CurrentSampleRate == 0)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("JackAudioInterface: Cannot get sample rate, forcing disconnect"));
+			DisconnectFromJack();
+			bWasConnected = false;
+		}
+	}
+}
+
+void AJackAudioInterface::OnServerStatusCheck()
+{
+	CheckServerStatus();
+}
+
+void AJackAudioInterface::TestJackConnection()
+{
+	UE_LOG(LogTemp, Log, TEXT("=== Jack Connection Test ==="));
+	
+	bool bServerRunning = CheckJackServerRunning();
+	UE_LOG(LogTemp, Log, TEXT("Server Running: %s"), bServerRunning ? TEXT("YES") : TEXT("NO"));
+	
+	bool bClientConnected = IsConnectedToJack();
+	UE_LOG(LogTemp, Log, TEXT("Client Connected: %s"), bClientConnected ? TEXT("YES") : TEXT("NO"));
+	
+	if (bClientConnected)
+	{
+		FString ClientName = GetJackClientName();
+		int32 CurrentSampleRate = GetJackSampleRate();
+		int32 CurrentBufferSize = GetJackBufferSize();
+		float CPUUsage = GetJackCPUUsage();
+		
+		UE_LOG(LogTemp, Log, TEXT("Client Name: %s"), *ClientName);
+		UE_LOG(LogTemp, Log, TEXT("Sample Rate: %d"), CurrentSampleRate);
+		UE_LOG(LogTemp, Log, TEXT("Buffer Size: %d"), CurrentBufferSize);
+		UE_LOG(LogTemp, Log, TEXT("CPU Usage: %.2f%%"), CPUUsage);
+		
+		// Test if we can get ports
+		int32 NumInputs = GetNumRegisteredInputPorts();
+		int32 NumOutputs = GetNumRegisteredOutputPorts();
+		UE_LOG(LogTemp, Log, TEXT("Input Ports: %d, Output Ports: %d"), NumInputs, NumOutputs);
+	}
+	
+	UE_LOG(LogTemp, Log, TEXT("=== End Test ==="));
 }
 
