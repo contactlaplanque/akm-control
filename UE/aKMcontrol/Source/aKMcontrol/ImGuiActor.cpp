@@ -30,21 +30,12 @@ void AImGuiActor::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
 
-    // Allow toggling ImGui input with G key
-    if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
-    {
-        if (PC->WasInputKeyJustPressed(EKeys::G))
-        {
-            FImGuiModule::Get().GetProperties().ToggleInput();
-        }
-    }
-
     ImGui::Begin("Main Window");
 
     // Show ImGui input capture status
     bool bImGuiInputEnabled = FImGuiModule::Get().GetProperties().IsInputEnabled();
     ImGui::TextColored(bImGuiInputEnabled ? ImVec4(1,1,0,1) : ImVec4(0.5f,0.5f,0.5f,1),
-        bImGuiInputEnabled ? "ImGui Input: ENABLED (G = camera control)" : "ImGui Input: DISABLED (G = ImGui control)");
+        bImGuiInputEnabled ? "ImGui Input: ENABLED" : "ImGui Input: DISABLED");
     ImGui::Separator();
 
     // FPS Monitor
