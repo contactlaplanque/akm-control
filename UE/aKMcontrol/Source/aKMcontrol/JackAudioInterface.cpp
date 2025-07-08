@@ -64,12 +64,6 @@ void AJackAudioInterface::BeginPlay()
 		// Always start server monitoring for automatic reconnection attempts
 		StartServerMonitoring();
 
-		// Start audio level print timer if enabled
-		if (bPrintChannelLevel)
-		{
-			GetWorld()->GetTimerManager().SetTimer(AudioLevelPrintTimerHandle, this, &AJackAudioInterface::PrintChannelLevel, AudioLevelPrintInterval, true);
-		}
-
 		// Start client connection monitoring if enabled
 		if (bMonitorNewClientConnections)
 		{
@@ -101,12 +95,6 @@ void AJackAudioInterface::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Shutting down, killing Jack server..."));
 		KillJackServer();
 	}
-
-    // Stop audio level timer
-    if (AudioLevelPrintTimerHandle.IsValid())
-    {
-        GetWorld()->GetTimerManager().ClearTimer(AudioLevelPrintTimerHandle);
-    }
 
 	// Stop client monitoring timer
 	if (ClientMonitorTimerHandle.IsValid())
@@ -464,20 +452,6 @@ void AJackAudioInterface::TestJackConnection()
 	}
 	
 	UE_LOG(LogTemp, Log, TEXT("=== End Test ==="));
-}
-
-void AJackAudioInterface::PrintChannelLevel()
-{
-    if (IsConnectedToJack())
-    {
-        float Level = JackClient.GetInputLevel(ChannelToMonitor);
-
-        // Convert to dBFS for readability (add epsilon to avoid log(0))
-        const float Epsilon = 1e-9f;
-        float dB = 20.0f * FMath::LogX(10.0f, FMath::Max(Level, Epsilon));
-
-        UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Input Channel %d Level -> RMS: %.6f (%.2f dBFS)"), ChannelToMonitor + 1, Level, dB);
-    }
 }
 
 float AJackAudioInterface::GetInputChannelLevel(int32 ChannelIndex) const

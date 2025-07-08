@@ -102,6 +102,18 @@ void AImGuiActor::Tick(float DeltaTime)
     RenderActorPickingSection();
 
     ImGui::End();
+
+	// Render the level meter in its own window if the interface is active
+	if (JackInterface && JackInterface->IsConnectedToJack())
+	{
+		// Set a default position and size for the meter window so it doesn't overlap the main one
+		ImGui::SetNextWindowPos(ImVec2(600, 50), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowSize(ImVec2(100, 300), ImGuiCond_FirstUseEver);
+
+		ImGui::Begin("Input Level Meter");
+		RenderLevelMeter();
+		ImGui::End();
+	}
 }
 
 void AImGuiActor::RenderJackAudioSection()
@@ -178,84 +190,78 @@ void AImGuiActor::RenderJackAudioSection()
         ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Not connected to Jack server");
     }
 
-	// Render the new level meter
-	if (JackInterface->IsConnectedToJack())
-	{
-		ImGui::Separator();
-		RenderLevelMeter();
-	}
+	// Render the new level meter - MOVED to Tick() in its own window
+	// if (JackInterface->IsConnectedToJack())
+	// {
+	// 	ImGui::Separator();
+	// 	RenderLevelMeter();
+	// }
 }
 
 void AImGuiActor::RenderLevelMeter()
 {
-	ImGui::Text("Input 1 Level");
-
 	// --- Constants ---
 	const float MinDB = -60.0f;
 	const float MaxDB = 6.0f;
 
 	// --- Calculations ---
-	// Convert linear RMS to dBFS
 	const float Epsilon = 1e-9f;
 	const float RmsDB = 20.0f * FMath::LogX(10.0f, FMath::Max(SmoothedRmsLevel, Epsilon));
 	const float PeakDB = 20.0f * FMath::LogX(10.0f, FMath::Max(PeakLevel, Epsilon));
-
-	// Normalize dB values to a 0-1 range for the progress bar
 	const float NormalizedRms = (FMath::Clamp(RmsDB, MinDB, MaxDB) - MinDB) / (MaxDB - MinDB);
 	const float NormalizedPeak = (FMath::Clamp(PeakDB, MinDB, MaxDB) - MinDB) / (MaxDB - MinDB);
-
+	
 	// --- Drawing ---
-	const ImVec2 MeterSize(ImGui::GetContentRegionAvail().x, 30.0f);
+	const ImVec2 MeterSize(20.0f, 200.0f);
+	// ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetContentRegionAvail().x - MeterSize.x) * 0.5f); // No longer centering the meter
 	const ImVec2 CursorPos = ImGui::GetCursorScreenPos();
 	ImDrawList* DrawList = ImGui::GetWindowDrawList();
+	const ImVec2 BarStart = ImVec2(CursorPos.x, CursorPos.y + MeterSize.y);
 
 	// 1. Draw Background
 	DrawList->AddRectFilled(CursorPos, ImVec2(CursorPos.x + MeterSize.x, CursorPos.y + MeterSize.y), IM_COL32(30, 30, 30, 255), 4.0f);
 
-	// 2. Draw RMS Level Bar (with color grading)
-	const float RmsBarWidth = MeterSize.x * NormalizedRms;
-	const ImU32 GreenColor = IM_COL32(0, 200, 0, 255);
-	const ImU32 YellowColor = IM_COL32(255, 255, 0, 255);
-	const ImU32 RedColor = IM_COL32(255, 0, 0, 255);
-	const float YellowThreshold = 0.75f; // 75% of the bar width
-	const float RedThreshold = 0.90f;  // 90% of the bar width
-
-	if (RmsBarWidth > 0)
+	// 2. Draw RMS Level Bar (from bottom to top)
+	const float RmsBarHeight = MeterSize.y * NormalizedRms;
+	if (RmsBarHeight > 0)
 	{
-		// Draw the green part
-		float GreenWidth = FMath::Min(RmsBarWidth, MeterSize.x * YellowThreshold);
-		DrawList->AddRectFilled(CursorPos, ImVec2(CursorPos.x + GreenWidth, CursorPos.y + MeterSize.y), GreenColor, 4.0f, ImDrawFlags_RoundCornersLeft);
+		const ImU32 GreenColor = IM_COL32(0, 200, 0, 255);
+		const ImU32 YellowColor = IM_COL32(255, 255, 0, 255);
+		const ImU32 RedColor = IM_COL32(255, 0, 0, 255);
+		const float YellowThreshold = 0.75f;
+		const float RedThreshold = 0.90f;
 
-		// Draw the yellow part
-		if (NormalizedRms > YellowThreshold)
-		{
-			float YellowWidth = FMath::Min(RmsBarWidth, MeterSize.x * RedThreshold) - GreenWidth;
-			DrawList->AddRectFilled(ImVec2(CursorPos.x + GreenWidth, CursorPos.y), ImVec2(CursorPos.x + GreenWidth + YellowWidth, CursorPos.y + MeterSize.y), YellowColor);
+		float GreenHeight = FMath::Min(RmsBarHeight, MeterSize.y * YellowThreshold);
+		DrawList->AddRectFilled(ImVec2(BarStart.x, BarStart.y - GreenHeight), ImVec2(BarStart.x + MeterSize.x, BarStart.y), GreenColor, 4.0f, ImDrawFlags_RoundCornersBottom);
+		if (NormalizedRms > YellowThreshold) {
+			float YellowHeight = FMath::Min(RmsBarHeight, MeterSize.y * RedThreshold) - GreenHeight;
+			DrawList->AddRectFilled(ImVec2(BarStart.x, BarStart.y - GreenHeight - YellowHeight), ImVec2(BarStart.x + MeterSize.x, BarStart.y - GreenHeight), YellowColor);
 		}
+		if (NormalizedRms > RedThreshold) {
+			float RedHeight = RmsBarHeight - (MeterSize.y * RedThreshold);
+			DrawList->AddRectFilled(ImVec2(BarStart.x, BarStart.y - (MeterSize.y * RedThreshold) - RedHeight), ImVec2(BarStart.x + MeterSize.x, BarStart.y - (MeterSize.y * RedThreshold)), RedColor);
+		}
+	}
 
-		// Draw the red part
-		if (NormalizedRms > RedThreshold)
-		{
-			float RedWidth = RmsBarWidth - (MeterSize.x * RedThreshold);
-			DrawList->AddRectFilled(ImVec2(CursorPos.x + (MeterSize.x * RedThreshold), CursorPos.y), ImVec2(CursorPos.x + (MeterSize.x * RedThreshold) + RedWidth, CursorPos.y + MeterSize.y), RedColor);
-		}
+	// 3. Draw Peak-Hold Indicator
+	if (NormalizedPeak > 0) {
+		const float PeakLineY = BarStart.y - (MeterSize.y * NormalizedPeak);
+		DrawList->AddLine(ImVec2(CursorPos.x, PeakLineY), ImVec2(CursorPos.x + MeterSize.x, PeakLineY), IM_COL32(255, 255, 255, 180), 2.0f);
 	}
 	
-	// 3. Draw Peak-Hold Indicator
-	if (NormalizedPeak > 0)
-	{
-		const float PeakLineX = CursorPos.x + (MeterSize.x * NormalizedPeak);
-		DrawList->AddLine(ImVec2(PeakLineX, CursorPos.y), ImVec2(PeakLineX, CursorPos.y + MeterSize.y), IM_COL32(255, 255, 255, 180), 2.0f);
-	}
-
-	// 4. Draw dBFS text label over the bar
-	FString Dblabel = FString::Printf(TEXT("%.1f dBFS"), RmsDB);
-	const ImVec2 TextSize = ImGui::CalcTextSize(TCHAR_TO_UTF8(*Dblabel));
-	ImVec2 TextPos = ImVec2(CursorPos.x + MeterSize.x - TextSize.x - 5, CursorPos.y + (MeterSize.y - TextSize.y) * 0.5f);
-	DrawList->AddText(TextPos, IM_COL32(255, 255, 255, 255), TCHAR_TO_UTF8(*Dblabel));
+	// 4. Draw dBFS value text - REMOVED
 
 	// Advance cursor past our custom widget
 	ImGui::Dummy(MeterSize);
+	
+	// 5. Draw Channel Number centered below the meter
+	const FString ChannelLabel = FString::Printf(TEXT("%d"), 1);
+	const ImVec2 ChannelTextSize = ImGui::CalcTextSize(TCHAR_TO_UTF8(*ChannelLabel));
+	
+	// Get the starting X position and add half the difference between meter width and text width
+	const float StartX = ImGui::GetCursorPosX();
+	ImGui::SetCursorPosX(StartX + (MeterSize.x - ChannelTextSize.x) * 0.5f);
+	ImGui::Text("%s", TCHAR_TO_UTF8(*ChannelLabel));
 }
 
 void AImGuiActor::RenderActorPickingSection()

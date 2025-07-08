@@ -142,22 +142,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Jack Audio|Monitoring")
 	float GetInputChannelLevel(int32 ChannelIndex) const;
 
-	// Audio level monitoring (debug)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Debug")
-	bool bPrintChannelLevel = true;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Debug")
-	float AudioLevelPrintInterval = 1.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Debug")
-	int32 ChannelToMonitor = 0;
-
-	// Handle for print timer
-	FTimerHandle AudioLevelPrintTimerHandle;
-
-	// Function to print level
-	void PrintChannelLevel();
-
 protected:
 	// Jack client instance (regular C++ class, not a UObject)
 	FJackClient JackClient;
