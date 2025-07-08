@@ -138,6 +138,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Client Monitoring", meta = (DisplayName = "Auto-Connect to New Clients"))
 	bool bAutoConnectToNewClients = true;
 
+	// Public getter for audio levels
+	UFUNCTION(BlueprintPure, Category = "Jack Audio|Monitoring")
+	float GetInputChannelLevel(int32 ChannelIndex) const;
+
 	// Audio level monitoring (debug)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Debug")
 	bool bPrintChannelLevel = true;

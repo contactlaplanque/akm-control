@@ -36,12 +36,24 @@ public:
 	float locationPrevious[3] = {0.0f, 0.0f, 0.0f};
 
 private:
+	// Pointer to the Jack Audio Interface actor
+	UPROPERTY()
+	AJackAudioInterface* JackInterface;
+	
+	// Level meter state
+	float SmoothedRmsLevel = 0.0f;
+	float PeakLevel = 0.0f;
+	float TimeOfLastPeak = 0.0f;
+
 	// Find JackAudioInterface in the scene
 	AJackAudioInterface* FindJackAudioInterface();
 	
 	// Render Jack audio interface section
 	void RenderJackAudioSection();
 	
+	// Render the audio level meter widget
+	void RenderLevelMeter();
+
 	// Render existing functionality section
 	void RenderActorPickingSection();
 	

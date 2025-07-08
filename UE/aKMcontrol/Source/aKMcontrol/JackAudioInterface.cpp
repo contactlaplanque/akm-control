@@ -480,6 +480,15 @@ void AJackAudioInterface::PrintChannelLevel()
     }
 }
 
+float AJackAudioInterface::GetInputChannelLevel(int32 ChannelIndex) const
+{
+	if (IsConnectedToJack())
+	{
+		return JackClient.GetInputLevel(ChannelIndex);
+	}
+	return 0.0f;
+}
+
 void AJackAudioInterface::MonitorNewClients()
 {
 	if (!IsConnectedToJack())
