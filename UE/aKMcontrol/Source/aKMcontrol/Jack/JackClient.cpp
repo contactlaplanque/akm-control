@@ -239,6 +239,7 @@ bool FJackClient::Connect(const FString& ClientName)
 
 	// Set up callbacks
 	jack_on_shutdown(JackClient, ShutdownCallback, this);
+	jack_set_process_callback(JackClient, FJackClient::ProcessCallback, this);
 	jack_set_xrun_callback(JackClient, XRunCallback, this);
 
 	ConnectionStatus = EJackConnectionStatus::Connected;
@@ -793,4 +794,15 @@ TArray<FString> FJackClient::GetAllClients() const
 
 
 	return UniqueClientNames.Array();
+} 
+
+FString FJackClient::GetPortFullName(jack_port_t* Port) const
+{
+	if (!IsConnected() || !Port)
+	{
+		return TEXT("");
+	}
+	
+	const char* PortName = jack_port_name(Port);
+	return FString(PortName ? PortName : "");
 } 

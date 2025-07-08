@@ -53,6 +53,8 @@ public:
 	// Client discovery
 	TArray<FString> GetAllClients() const;
 
+	FString GetPortFullName(jack_port_t* Port) const;
+
 	// Connection management
 	bool ConnectPorts(const FString& SourcePort, const FString& DestinationPort);
 	bool DisconnectPorts(const FString& SourcePort, const FString& DestinationPort);

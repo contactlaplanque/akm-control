@@ -135,6 +135,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Client Monitoring")
 	float ClientMonitorInterval = 2.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Client Monitoring", meta = (DisplayName = "Auto-Connect to New Clients"))
+	bool bAutoConnectToNewClients = true;
+
 	// Audio level monitoring (debug)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Debug")
 	bool bPrintChannelLevel = true;
@@ -197,4 +200,7 @@ private:
 	
 	// Function to check for new clients
 	void MonitorNewClients();
+	
+	// Helper to connect to a client's ports
+	void AutoConnectToClient(FString ClientName);
 };

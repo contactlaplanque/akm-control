@@ -6,6 +6,7 @@
 #include "HAL/PlatformProcess.h"
 #include "TimerManager.h"
 #include "Math/UnrealMathUtility.h"
+#include "jack/jack.h"
 
 // Sets default values
 AJackAudioInterface::AJackAudioInterface()
@@ -495,6 +496,22 @@ void AJackAudioInterface::MonitorNewClients()
 	for (const FString& ClientName : NewClients)
 	{
 		UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Client connected -> %s"), *ClientName);
+
+		// If auto-connect is enabled, establish the connections
+		if (bAutoConnectToNewClients)
+		{
+			// Ignore the system client for auto-connection
+			if (ClientName.Equals(TEXT("system"), ESearchCase::IgnoreCase))
+			{
+				UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Ignoring 'system' client for auto-connection."));
+				continue;
+			}
+			
+			// Use a small delay to ensure the client has fully initialized its ports
+			FTimerHandle TempTimer;
+			FTimerDelegate TimerDelegate = FTimerDelegate::CreateUObject(this, &AJackAudioInterface::AutoConnectToClient, ClientName);
+			GetWorld()->GetTimerManager().SetTimer(TempTimer, TimerDelegate, 0.5f, false);
+		}
 	}
 
 	// Check for disconnected clients
@@ -506,5 +523,59 @@ void AJackAudioInterface::MonitorNewClients()
 	
 	// Update the set of known clients for the next check
 	KnownClients = CurrentClients;
+}
+
+void AJackAudioInterface::AutoConnectToClient(FString ClientName)
+{
+	if (!IsConnectedToJack())
+	{
+		return;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Attempting to auto-connect to '%s'..."), *ClientName);
+
+	// Get the output ports from the target client that are of the standard audio type
+	const FString NamePattern = FString::Printf(TEXT("%s:*"), *ClientName);
+	TArray<FString> ClientOutputPorts = JackClient.GetAvailablePorts(NamePattern, TEXT(JACK_DEFAULT_AUDIO_TYPE), JackPortIsOutput);
+
+	if (ClientOutputPorts.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("JackAudioInterface: No compatible audio output ports found on '%s'. Ignoring."), *ClientName);
+		return;
+	}
+
+	// Get our own client's input ports
+	TArray<jack_port_t*> OurInputPorts = JackClient.GetInputPorts();
+	if (OurInputPorts.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("JackAudioInterface: We have no registered input ports to connect to."));
+		return;
+	}
+
+	// Determine the number of connections to make (the minimum of the two port counts)
+	const int32 NumConnectionsToMake = FMath::Min(ClientOutputPorts.Num(), OurInputPorts.Num());
+	UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Found %d output ports on '%s' and %d input ports on our client. Connecting %d port(s)."), ClientOutputPorts.Num(), *ClientName, OurInputPorts.Num(), NumConnectionsToMake);
+
+	for (int32 i = 0; i < NumConnectionsToMake; ++i)
+	{
+		const FString& SourcePort = ClientOutputPorts[i];
+		const FString DestinationPort = JackClient.GetPortFullName(OurInputPorts[i]);
+
+		if (SourcePort.IsEmpty() || DestinationPort.IsEmpty())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("JackAudioInterface: Could not get full port name for connection index %d. Skipping."), i);
+			continue;
+		}
+
+		UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Connecting '%s' -> '%s'..."), *SourcePort, *DestinationPort);
+		if (ConnectJackPorts(SourcePort, DestinationPort))
+		{
+			UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: ...Connection successful."));
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("JackAudioInterface: ...Connection FAILED."));
+		}
+	}
 }
 
