@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+// ImGuiActor.h
 
 #pragma once
 
@@ -32,8 +32,6 @@ public:
 	// Actor Picking Variables
 	TWeakObjectPtr<AActor> PickedActor;
 	bool bIsPickingActor = false;
-	float location[3] = {0.0f, 0.0f, 0.0f};
-	float locationPrevious[3] = {0.0f, 0.0f, 0.0f};
 
 private:
 	// Pointer to the Jack Audio Interface actor

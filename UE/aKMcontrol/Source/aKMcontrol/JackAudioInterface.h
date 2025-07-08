@@ -1,5 +1,3 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -14,18 +12,13 @@ class AKMCONTROL_API AJackAudioInterface : public AActor
 	GENERATED_BODY()
 	
 public:	
-	// Sets default values for this actor's properties
 	AJackAudioInterface();
 
 protected:
-	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
-
-	// Called when the actor is being destroyed
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 public:	
-	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 
 	// Jack connection management
@@ -100,13 +93,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Jack Audio")
 	FString GetJackServerInfo() const;
 
-	// Debug display
-	UFUNCTION(BlueprintCallable, Category = "Jack Audio")
-	void DisplayJackInfoOnScreen();
-
-	// Debug connection test (internal use only)
-	void TestJackConnection();
-
 	// Server monitoring (public for ImGui access)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Server Monitoring")
 	bool bMonitorServerStatus = true; // Enabled by default for automatic management
@@ -162,22 +148,11 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Server Configuration")
 	bool bAutoStartServer = true;
 
-	// Debug display
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio")
-	bool bShowDebugInfo = true;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio")
-	FVector2D DebugTextLocation = FVector2D(50.0f, 50.0f);
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio")
-	FColor DebugTextColor = FColor::Green;
-
 	// Connection state tracking for logging
 	bool bWasConnected = false;
 
 private:
 	// Internal helper functions
-	void UpdateDebugDisplay();
 	void CheckServerStatus();
 
 	// Timer for client monitoring

@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+// JackAudioInterface.cpp
 
 #include "JackAudioInterface.h"
 #include "Engine/Engine.h"
@@ -8,15 +8,11 @@
 #include "Math/UnrealMathUtility.h"
 #include "jack/jack.h"
 
-// Sets default values
 AJackAudioInterface::AJackAudioInterface()
 {
- 	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
-
 }
 
-// Called when the game starts or when spawned
 void AJackAudioInterface::BeginPlay()
 {
 	Super::BeginPlay();
@@ -80,7 +76,6 @@ void AJackAudioInterface::BeginPlay()
 	}
 }
 
-// Called when the actor is being destroyed
 void AJackAudioInterface::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	// Stop server monitoring
@@ -108,16 +103,9 @@ void AJackAudioInterface::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
-// Called every frame
 void AJackAudioInterface::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-
-	// Debug display is now handled by ImGui
-	// if (bShowDebugInfo)
-	// {
-	// 	UpdateDebugDisplay();
-	// }
 }
 
 bool AJackAudioInterface::ConnectToJack(const FString& ClientName)
@@ -283,54 +271,6 @@ FString AJackAudioInterface::GetJackServerInfo() const
 	return JackClient.GetServerInfo();
 }
 
-void AJackAudioInterface::DisplayJackInfoOnScreen()
-{
-	if (!GEngine)
-	{
-		return;
-	}
-
-	FString DebugText;
-	
-	// Connection status
-	EJackConnectionStatus Status = GetJackConnectionStatus();
-	switch (Status)
-	{
-	case EJackConnectionStatus::Connected:
-		DebugText += TEXT("Jack Status: CONNECTED\n");
-		break;
-	case EJackConnectionStatus::Connecting:
-		DebugText += TEXT("Jack Status: CONNECTING\n");
-		break;
-	case EJackConnectionStatus::Disconnected:
-		DebugText += TEXT("Jack Status: DISCONNECTED\n");
-		break;
-	case EJackConnectionStatus::Failed:
-		DebugText += TEXT("Jack Status: FAILED\n");
-		break;
-	}
-
-	if (IsConnectedToJack())
-	{
-		// Client information
-		DebugText += FString::Printf(TEXT("Client Name: %s\n"), *GetJackClientName());
-		DebugText += FString::Printf(TEXT("Sample Rate: %d Hz\n"), GetJackSampleRate());
-		DebugText += FString::Printf(TEXT("Buffer Size: %d frames\n"), GetJackBufferSize());
-		DebugText += FString::Printf(TEXT("CPU Usage: %.2f%%\n"), GetJackCPUUsage());
-		DebugText += FString::Printf(TEXT("Input Ports: %d\n"), GetNumRegisteredInputPorts());
-		DebugText += FString::Printf(TEXT("Output Ports: %d\n"), GetNumRegisteredOutputPorts());
-	}
-
-	// Display on screen
-	GEngine->AddOnScreenDebugMessage(-1, 0.0f, DebugTextColor, DebugText);
-}
-
-void AJackAudioInterface::UpdateDebugDisplay()
-{
-	// Update debug display every frame if enabled
-	DisplayJackInfoOnScreen();
-}
-
 void AJackAudioInterface::CheckServerStatus()
 {
 	// Get current status
@@ -421,37 +361,6 @@ void AJackAudioInterface::StopServerMonitoring()
 		}
 		UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Stopped server monitoring"));
 	}
-}
-
-void AJackAudioInterface::TestJackConnection()
-{
-	UE_LOG(LogTemp, Log, TEXT("=== Jack Connection Test ==="));
-	
-	bool bServerRunning = CheckJackServerRunning();
-	UE_LOG(LogTemp, Log, TEXT("Server Running: %s"), bServerRunning ? TEXT("YES") : TEXT("NO"));
-	
-	bool bClientConnected = IsConnectedToJack();
-	UE_LOG(LogTemp, Log, TEXT("Client Connected: %s"), bClientConnected ? TEXT("YES") : TEXT("NO"));
-	
-	if (bClientConnected)
-	{
-		FString ClientName = GetJackClientName();
-		int32 CurrentSampleRate = GetJackSampleRate();
-		int32 CurrentBufferSize = GetJackBufferSize();
-		float CPUUsage = GetJackCPUUsage();
-		
-		UE_LOG(LogTemp, Log, TEXT("Client Name: %s"), *ClientName);
-		UE_LOG(LogTemp, Log, TEXT("Sample Rate: %d"), CurrentSampleRate);
-		UE_LOG(LogTemp, Log, TEXT("Buffer Size: %d"), CurrentBufferSize);
-		UE_LOG(LogTemp, Log, TEXT("CPU Usage: %.2f%%"), CPUUsage);
-		
-		// Test if we can get ports
-		int32 NumInputs = GetNumRegisteredInputPorts();
-		int32 NumOutputs = GetNumRegisteredOutputPorts();
-		UE_LOG(LogTemp, Log, TEXT("Input Ports: %d, Output Ports: %d"), NumInputs, NumOutputs);
-	}
-	
-	UE_LOG(LogTemp, Log, TEXT("=== End Test ==="));
 }
 
 float AJackAudioInterface::GetInputChannelLevel(int32 ChannelIndex) const

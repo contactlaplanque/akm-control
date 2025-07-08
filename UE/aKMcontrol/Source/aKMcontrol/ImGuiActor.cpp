@@ -1,5 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
+// ImGuiActor.cpp
 
 #include "ImGuiActor.h"
 #include "SourceActor.h"
@@ -8,15 +7,11 @@
 #include "Engine/Engine.h"
 #include "GameFramework/PlayerController.h"
 
-// Sets default values
 AImGuiActor::AImGuiActor()
 {
- 	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
-	
 }
 
-// Called when the game starts or when spawned
 void AImGuiActor::BeginPlay()
 {
 	Super::BeginPlay();
@@ -31,7 +26,6 @@ void AImGuiActor::BeginPlay()
 	ImGui::GetStyle().ScaleAllSizes(2.0f);
 }
 
-// Called every frame
 void AImGuiActor::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
@@ -202,13 +196,6 @@ void AImGuiActor::RenderJackAudioSection()
     {
         ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Not connected to Jack server");
     }
-
-	// Render the new level meter - MOVED to Tick() in its own window
-	// if (JackInterface->IsConnectedToJack())
-	// {
-	// 	ImGui::Separator();
-	// 	RenderLevelMeter();
-	// }
 }
 
 void AImGuiActor::RenderLevelMeter()
@@ -409,30 +396,6 @@ void AImGuiActor::RenderActorPickingSection()
             ImGui::Text("Picked source:");
             ImGui::SameLine(); 
             ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), " %ls", *SourceActor->GetName());
-
-            const FVector actorLocation = SourceActor->GetActorLocation();
-
-            location[0] = actorLocation.X;
-            location[1] = actorLocation.Y;
-            location[2] = actorLocation.Z;
-
-            ImGui::InputFloat3("Location", location);
-        }
-    }
-
-    // Update actor location if changed
-    if (AActor* Actor = PickedActor.Get())
-    {
-        if (ASourceActor* SourceActor = Cast<ASourceActor>(Actor))
-        {
-            if (location[0] != locationPrevious[0] || location[1] != locationPrevious[1] || location[2] != locationPrevious[2])
-            {
-                locationPrevious[0] = location[0];
-                locationPrevious[1] = location[1];
-                locationPrevious[2] = location[2];
-
-                SourceActor->SetActorLocation(FVector(location[0], location[1], location[2]));
-            }
         }
     }
 }
