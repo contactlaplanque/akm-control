@@ -40,10 +40,10 @@ private:
 	UPROPERTY()
 	AJackAudioInterface* JackInterface;
 	
-	// Level meter state
-	float SmoothedRmsLevel = 0.0f;
-	float PeakLevel = 0.0f;
-	float TimeOfLastPeak = 0.0f;
+	// Level meter state for all channels
+	TArray<float> SmoothedRmsLevels;
+	TArray<float> PeakLevels;
+	TArray<float> TimesOfLastPeak;
 
 	// Find JackAudioInterface in the scene
 	AJackAudioInterface* FindJackAudioInterface();

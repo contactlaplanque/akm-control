@@ -39,26 +39,39 @@ void AImGuiActor::Tick(float DeltaTime)
 	// --- Update Level Meter State ---
 	if (JackInterface)
 	{
-		// Get the raw RMS level for channel 0 using our public getter
-		const float RawRms = JackInterface->GetInputChannelLevel(0);
+		const int32 NumChannels = JackInterface->GetNumRegisteredInputPorts();
 
-		// Apply smoothing (exponential moving average)
-		const float SmoothingFactor = 0.6f;
-		SmoothedRmsLevel = (RawRms * (1.0f - SmoothingFactor)) + (SmoothedRmsLevel * SmoothingFactor);
-
-		// Update peak level
-		if (SmoothedRmsLevel > PeakLevel)
+		// Ensure our state arrays are the correct size
+		if (SmoothedRmsLevels.Num() != NumChannels)
 		{
-			PeakLevel = SmoothedRmsLevel;
-			TimeOfLastPeak = GetWorld()->GetTimeSeconds();
+			SmoothedRmsLevels.Init(0.0f, NumChannels);
+			PeakLevels.Init(0.0f, NumChannels);
+			TimesOfLastPeak.Init(0.0f, NumChannels);
 		}
-
-		// Let peak level fall off after a short time
-		const float PeakHoldTime = 1.5f;
-		if (GetWorld()->GetTimeSeconds() - TimeOfLastPeak > PeakHoldTime)
+		
+		for (int32 i = 0; i < NumChannels; ++i)
 		{
-			// Decay peak level smoothly
-			PeakLevel = FMath::Max(0.0f, PeakLevel - (DeltaTime * 0.5f));
+			// Get the raw RMS level for the current channel
+			const float RawRms = JackInterface->GetInputChannelLevel(i);
+
+			// Apply smoothing (exponential moving average)
+			const float SmoothingFactor = 0.6f;
+			SmoothedRmsLevels[i] = (RawRms * (1.0f - SmoothingFactor)) + (SmoothedRmsLevels[i] * SmoothingFactor);
+
+			// Update peak level
+			if (SmoothedRmsLevels[i] > PeakLevels[i])
+			{
+				PeakLevels[i] = SmoothedRmsLevels[i];
+				TimesOfLastPeak[i] = GetWorld()->GetTimeSeconds();
+			}
+
+			// Let peak level fall off after a short time
+			const float PeakHoldTime = 1.5f;
+			if (GetWorld()->GetTimeSeconds() - TimesOfLastPeak[i] > PeakHoldTime)
+			{
+				// Decay peak level smoothly
+				PeakLevels[i] = FMath::Max(0.0f, PeakLevels[i] - (DeltaTime * 0.5f));
+			}
 		}
 	}
 	// --- End Update ---
@@ -108,7 +121,7 @@ void AImGuiActor::Tick(float DeltaTime)
 	{
 		// Set a default position and size for the meter window so it doesn't overlap the main one
 		ImGui::SetNextWindowPos(ImVec2(600, 50), ImGuiCond_FirstUseEver);
-		ImGui::SetNextWindowSize(ImVec2(100, 300), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowSize(ImVec2(450, 550), ImGuiCond_FirstUseEver);
 
 		ImGui::Begin("Input Level Meter");
 		RenderLevelMeter();
@@ -200,68 +213,118 @@ void AImGuiActor::RenderJackAudioSection()
 
 void AImGuiActor::RenderLevelMeter()
 {
-	// --- Constants ---
-	const float MinDB = -60.0f;
-	const float MaxDB = 6.0f;
-
-	// --- Calculations ---
-	const float Epsilon = 1e-9f;
-	const float RmsDB = 20.0f * FMath::LogX(10.0f, FMath::Max(SmoothedRmsLevel, Epsilon));
-	const float PeakDB = 20.0f * FMath::LogX(10.0f, FMath::Max(PeakLevel, Epsilon));
-	const float NormalizedRms = (FMath::Clamp(RmsDB, MinDB, MaxDB) - MinDB) / (MaxDB - MinDB);
-	const float NormalizedPeak = (FMath::Clamp(PeakDB, MinDB, MaxDB) - MinDB) / (MaxDB - MinDB);
-	
-	// --- Drawing ---
-	const ImVec2 MeterSize(20.0f, 200.0f);
-	// ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetContentRegionAvail().x - MeterSize.x) * 0.5f); // No longer centering the meter
-	const ImVec2 CursorPos = ImGui::GetCursorScreenPos();
-	ImDrawList* DrawList = ImGui::GetWindowDrawList();
-	const ImVec2 BarStart = ImVec2(CursorPos.x, CursorPos.y + MeterSize.y);
-
-	// 1. Draw Background
-	DrawList->AddRectFilled(CursorPos, ImVec2(CursorPos.x + MeterSize.x, CursorPos.y + MeterSize.y), IM_COL32(30, 30, 30, 255), 4.0f);
-
-	// 2. Draw RMS Level Bar (from bottom to top)
-	const float RmsBarHeight = MeterSize.y * NormalizedRms;
-	if (RmsBarHeight > 0)
+	if (SmoothedRmsLevels.IsEmpty())
 	{
-		const ImU32 GreenColor = IM_COL32(0, 200, 0, 255);
-		const ImU32 YellowColor = IM_COL32(255, 255, 0, 255);
-		const ImU32 RedColor = IM_COL32(255, 0, 0, 255);
-		const float YellowThreshold = 0.75f;
-		const float RedThreshold = 0.90f;
-
-		float GreenHeight = FMath::Min(RmsBarHeight, MeterSize.y * YellowThreshold);
-		DrawList->AddRectFilled(ImVec2(BarStart.x, BarStart.y - GreenHeight), ImVec2(BarStart.x + MeterSize.x, BarStart.y), GreenColor, 4.0f, ImDrawFlags_RoundCornersBottom);
-		if (NormalizedRms > YellowThreshold) {
-			float YellowHeight = FMath::Min(RmsBarHeight, MeterSize.y * RedThreshold) - GreenHeight;
-			DrawList->AddRectFilled(ImVec2(BarStart.x, BarStart.y - GreenHeight - YellowHeight), ImVec2(BarStart.x + MeterSize.x, BarStart.y - GreenHeight), YellowColor);
-		}
-		if (NormalizedRms > RedThreshold) {
-			float RedHeight = RmsBarHeight - (MeterSize.y * RedThreshold);
-			DrawList->AddRectFilled(ImVec2(BarStart.x, BarStart.y - (MeterSize.y * RedThreshold) - RedHeight), ImVec2(BarStart.x + MeterSize.x, BarStart.y - (MeterSize.y * RedThreshold)), RedColor);
-		}
+		ImGui::Text("No input channels to display.");
+		return;
 	}
 
-	// 3. Draw Peak-Hold Indicator
-	if (NormalizedPeak > 0) {
-		const float PeakLineY = BarStart.y - (MeterSize.y * NormalizedPeak);
-		DrawList->AddLine(ImVec2(CursorPos.x, PeakLineY), ImVec2(CursorPos.x + MeterSize.x, PeakLineY), IM_COL32(255, 255, 255, 180), 2.0f);
-	}
-	
-	// 4. Draw dBFS value text - REMOVED
+	// --- Adaptive Layout ---
+	const int32 ChannelsPerGroup = 8;
+	const float MeterWidth = 12.0f;
+	const float MeterSpacing = 4.0f; // Spacing between individual meters for clarity
+	const float MeterHeight = 240.0f; // Increased height for better scale readability
+	const float ScaleWidth = 30.0f;
+	const float GroupSpacing = 20.0f; // Increased spacing between groups
+	// Account for the spacing between meters in the total group width
+	const float GroupWidth = ScaleWidth + (MeterWidth * ChannelsPerGroup) + (MeterSpacing * (ChannelsPerGroup - 1)) + GroupSpacing;
 
-	// Advance cursor past our custom widget
-	ImGui::Dummy(MeterSize);
-	
-	// 5. Draw Channel Number centered below the meter
-	const FString ChannelLabel = FString::Printf(TEXT("%d"), 1);
-	const ImVec2 ChannelTextSize = ImGui::CalcTextSize(TCHAR_TO_UTF8(*ChannelLabel));
-	
-	// Get the starting X position and add half the difference between meter width and text width
-	const float StartX = ImGui::GetCursorPosX();
-	ImGui::SetCursorPosX(StartX + (MeterSize.x - ChannelTextSize.x) * 0.5f);
-	ImGui::Text("%s", TCHAR_TO_UTF8(*ChannelLabel));
+	int numColumns = FMath::FloorToInt(ImGui::GetContentRegionAvail().x / GroupWidth);
+	numColumns = FMath::Max(1, numColumns);
+
+	for (int32 groupIdx = 0; groupIdx * ChannelsPerGroup < SmoothedRmsLevels.Num(); ++groupIdx)
+	{
+		ImGui::BeginGroup(); // Group the scale, meters, and label together
+
+		// --- Get base positions and draw list ---
+		const ImVec2 GroupCursorStart = ImGui::GetCursorScreenPos();
+		ImDrawList* DrawList = ImGui::GetWindowDrawList();
+
+		// --- 1. Draw the dB Scale on the left of the group ---
+		{
+			const ImVec2 ScalePos = GroupCursorStart;
+			const float MinDB = -60.0f;
+			const float TickLevels[] = {6.0f, 0.0f, -6.0f, -12.0f, -24.0f, -48.0f};
+
+			for (float TickDB : TickLevels)
+			{
+				float NormalizedTick = (FMath::Clamp(TickDB, -60.f, 6.f) - MinDB) / (6.f - MinDB);
+				float TickY = ScalePos.y + MeterHeight - (MeterHeight * NormalizedTick);
+				
+				// Draw tick mark
+				DrawList->AddLine(ImVec2(ScalePos.x + ScaleWidth - 5, TickY), ImVec2(ScalePos.x + ScaleWidth, TickY), IM_COL32(180, 180, 180, 255));
+
+				// Draw text
+				FString TickLabel = FString::Printf(TEXT("%.0f"), TickDB);
+				ImVec2 TextSize = ImGui::CalcTextSize(TCHAR_TO_UTF8(*TickLabel));
+				DrawList->AddText(ImVec2(ScalePos.x + ScaleWidth - 7 - TextSize.x, TickY - TextSize.y / 2), IM_COL32(180, 180, 180, 255), TCHAR_TO_UTF8(*TickLabel));
+			}
+		}
+
+		// --- 2. Draw the block of 8 meters ---
+		ImGui::SetCursorScreenPos(ImVec2(GroupCursorStart.x + ScaleWidth, GroupCursorStart.y)); // Position cursor for meters
+		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(MeterSpacing, 0.0f));
+		for (int32 i = 0; i < ChannelsPerGroup; ++i)
+		{
+			int32 channelIdx = groupIdx * ChannelsPerGroup + i;
+			if (channelIdx >= SmoothedRmsLevels.Num()) break;
+
+			const float MinDB = -60.0f, MaxDB = 6.0f;
+			const float RmsDB = 20.0f * FMath::LogX(10.0f, FMath::Max(SmoothedRmsLevels[channelIdx], 1e-9f));
+			const float PeakDB = 20.0f * FMath::LogX(10.0f, FMath::Max(PeakLevels[channelIdx], 1e-9f));
+			const float NormalizedRms = (FMath::Clamp(RmsDB, MinDB, MaxDB) - MinDB) / (MaxDB - MinDB);
+			const float NormalizedPeak = (FMath::Clamp(PeakDB, MinDB, MaxDB) - MinDB) / (MaxDB - MinDB);
+			
+			const ImVec2 MeterSize(MeterWidth, MeterHeight);
+			const ImVec2 CursorPos = ImGui::GetCursorScreenPos();
+			const ImVec2 BarStart = ImVec2(CursorPos.x, CursorPos.y + MeterSize.y);
+
+			DrawList->AddRectFilled(CursorPos, ImVec2(CursorPos.x + MeterSize.x, CursorPos.y + MeterSize.y), IM_COL32(30, 30, 30, 255), 2.0f);
+			
+			if (NormalizedRms > 0) {
+				const ImU32 GreenColor=IM_COL32(0,200,0,255), YellowColor=IM_COL32(255,255,0,255), RedColor=IM_COL32(255,0,0,255);
+				const float YellowT=0.75f, RedT=0.90f;
+				float GreenHeight = FMath::Min(MeterSize.y * NormalizedRms, MeterSize.y * YellowT);
+				DrawList->AddRectFilled(ImVec2(BarStart.x, BarStart.y-GreenHeight), ImVec2(BarStart.x+MeterSize.x, BarStart.y), GreenColor, 2.0f, ImDrawFlags_RoundCornersBottom);
+				if(NormalizedRms > YellowT){
+					float YellowHeight = FMath::Min(MeterSize.y*NormalizedRms, MeterSize.y*RedT) - GreenHeight;
+					DrawList->AddRectFilled(ImVec2(BarStart.x, BarStart.y-GreenHeight-YellowHeight), ImVec2(BarStart.x+MeterSize.x, BarStart.y-GreenHeight), YellowColor);
+				}
+				if(NormalizedRms > RedT){
+					float RedHeight = (MeterSize.y*NormalizedRms) - (MeterSize.y*RedT);
+					DrawList->AddRectFilled(ImVec2(BarStart.x, BarStart.y-(MeterSize.y*RedT)-RedHeight), ImVec2(BarStart.x+MeterSize.x, BarStart.y-(MeterSize.y*RedT)), RedColor);
+				}
+			}
+
+			if (NormalizedPeak > 0) {
+				const float PeakLineY = BarStart.y - (MeterSize.y * NormalizedPeak);
+				DrawList->AddLine(ImVec2(CursorPos.x, PeakLineY), ImVec2(CursorPos.x + MeterSize.x, PeakLineY), IM_COL32(255, 255, 255, 180), 1.0f);
+			}
+
+			// The explicit divider line is no longer needed, as ItemSpacing handles it.
+
+			ImGui::Dummy(MeterSize);
+			ImGui::SameLine();
+		}
+		ImGui::PopStyleVar();
+		
+		// --- 3. Draw the group label, properly centered under the meters ---
+		ImGui::SetCursorScreenPos(ImVec2(GroupCursorStart.x + ScaleWidth, GroupCursorStart.y + MeterHeight + 5));
+		const int32 StartChannel = groupIdx * ChannelsPerGroup + 1;
+		const int32 EndChannel = FMath::Min(StartChannel + ChannelsPerGroup - 1, SmoothedRmsLevels.Num());
+		const FString ChannelLabel = FString::Printf(TEXT("%d-%d"), StartChannel, EndChannel);
+		const ImVec2 TextSize = ImGui::CalcTextSize(TCHAR_TO_UTF8(*ChannelLabel));
+		ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ((MeterWidth * ChannelsPerGroup) - TextSize.x) * 0.5f);
+		ImGui::Text("%s", TCHAR_TO_UTF8(*ChannelLabel));
+
+		ImGui::EndGroup(); // End the main group for scale, meters, and label
+
+		// --- Handle wrapping for the next group ---
+		if ((groupIdx + 1) % numColumns != 0)
+		{
+			ImGui::SameLine(0, GroupSpacing);
+		}
+	}
 }
 
 void AImGuiActor::RenderActorPickingSection()
