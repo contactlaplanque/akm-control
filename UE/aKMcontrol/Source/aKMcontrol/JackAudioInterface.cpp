@@ -5,6 +5,7 @@
 #include "Engine/World.h"
 #include "HAL/PlatformProcess.h"
 #include "TimerManager.h"
+#include "Math/UnrealMathUtility.h"
 
 // Sets default values
 AJackAudioInterface::AJackAudioInterface()
@@ -61,6 +62,22 @@ void AJackAudioInterface::BeginPlay()
 
 		// Always start server monitoring for automatic reconnection attempts
 		StartServerMonitoring();
+
+		// Start audio level print timer if enabled
+		if (bPrintChannelLevel)
+		{
+			GetWorld()->GetTimerManager().SetTimer(AudioLevelPrintTimerHandle, this, &AJackAudioInterface::PrintChannelLevel, AudioLevelPrintInterval, true);
+		}
+
+		// Start client connection monitoring if enabled
+		if (bMonitorNewClientConnections)
+		{
+			// Initial check
+			MonitorNewClients();
+			
+			// Set up timer for subsequent checks
+			GetWorld()->GetTimerManager().SetTimer(ClientMonitorTimerHandle, this, &AJackAudioInterface::MonitorNewClients, ClientMonitorInterval, true);
+		}
 	}
 	else
 	{
@@ -82,6 +99,18 @@ void AJackAudioInterface::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Shutting down, killing Jack server..."));
 		KillJackServer();
+	}
+
+    // Stop audio level timer
+    if (AudioLevelPrintTimerHandle.IsValid())
+    {
+        GetWorld()->GetTimerManager().ClearTimer(AudioLevelPrintTimerHandle);
+    }
+
+	// Stop client monitoring timer
+	if (ClientMonitorTimerHandle.IsValid())
+	{
+		GetWorld()->GetTimerManager().ClearTimer(ClientMonitorTimerHandle);
 	}
 
 	// Disconnect from Jack
@@ -434,5 +463,48 @@ void AJackAudioInterface::TestJackConnection()
 	}
 	
 	UE_LOG(LogTemp, Log, TEXT("=== End Test ==="));
+}
+
+void AJackAudioInterface::PrintChannelLevel()
+{
+    if (IsConnectedToJack())
+    {
+        float Level = JackClient.GetInputLevel(ChannelToMonitor);
+
+        // Convert to dBFS for readability (add epsilon to avoid log(0))
+        const float Epsilon = 1e-9f;
+        float dB = 20.0f * FMath::LogX(10.0f, FMath::Max(Level, Epsilon));
+
+        UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Input Channel %d Level -> RMS: %.6f (%.2f dBFS)"), ChannelToMonitor + 1, Level, dB);
+    }
+}
+
+void AJackAudioInterface::MonitorNewClients()
+{
+	if (!IsConnectedToJack())
+	{
+		return;
+	}
+
+	// Get the current list of clients from the server
+	TArray<FString> CurrentClientArray = JackClient.GetAllClients();
+	TSet<FString> CurrentClients(CurrentClientArray);
+
+	// Check for newly connected clients
+	TSet<FString> NewClients = CurrentClients.Difference(KnownClients);
+	for (const FString& ClientName : NewClients)
+	{
+		UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Client connected -> %s"), *ClientName);
+	}
+
+	// Check for disconnected clients
+	TSet<FString> DisconnectedClients = KnownClients.Difference(CurrentClients);
+	for (const FString& ClientName : DisconnectedClients)
+	{
+		UE_LOG(LogTemp, Log, TEXT("JackAudioInterface: Client disconnected -> %s"), *ClientName);
+	}
+	
+	// Update the set of known clients for the next check
+	KnownClients = CurrentClients;
 }
 

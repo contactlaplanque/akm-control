@@ -128,6 +128,29 @@ public:
 
 	void OnServerStatusCheck();
 
+	// Client connection monitoring
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Client Monitoring")
+	bool bMonitorNewClientConnections = true;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Client Monitoring")
+	float ClientMonitorInterval = 2.0f;
+
+	// Audio level monitoring (debug)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Debug")
+	bool bPrintChannelLevel = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Debug")
+	float AudioLevelPrintInterval = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jack Audio|Debug")
+	int32 ChannelToMonitor = 0;
+
+	// Handle for print timer
+	FTimerHandle AudioLevelPrintTimerHandle;
+
+	// Function to print level
+	void PrintChannelLevel();
+
 protected:
 	// Jack client instance (regular C++ class, not a UObject)
 	FJackClient JackClient;
@@ -165,4 +188,13 @@ private:
 	// Internal helper functions
 	void UpdateDebugDisplay();
 	void CheckServerStatus();
+
+	// Timer for client monitoring
+	FTimerHandle ClientMonitorTimerHandle;
+	
+	// Set of known clients to track new connections
+	TSet<FString> KnownClients;
+	
+	// Function to check for new clients
+	void MonitorNewClients();
 };

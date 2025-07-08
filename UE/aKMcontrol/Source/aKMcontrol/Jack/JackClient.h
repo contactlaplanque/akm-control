@@ -50,6 +50,9 @@ public:
 	TArray<jack_port_t*> GetInputPorts() const;
 	TArray<jack_port_t*> GetOutputPorts() const;
 
+	// Client discovery
+	TArray<FString> GetAllClients() const;
+
 	// Connection management
 	bool ConnectPorts(const FString& SourcePort, const FString& DestinationPort);
 	bool DisconnectPorts(const FString& SourcePort, const FString& DestinationPort);
@@ -70,6 +73,9 @@ public:
 	jack_client_t* GetClient() const { return JackClient; }
 	EJackConnectionStatus GetConnectionStatus() const { return ConnectionStatus; }
 
+	// Audio level monitoring
+	float GetInputLevel(int32 ChannelIndex) const;
+
 private:
 	jack_client_t* JackClient;
 	EJackConnectionStatus ConnectionStatus;
@@ -80,6 +86,9 @@ private:
 	TArray<jack_port_t*> InputPorts;
 	TArray<jack_port_t*> OutputPorts;
 
+	// Audio levels (updated in the realtime callback)
+	TArray<float> InputLevels;
+
 	// Callback handlers
 	static int ProcessCallback(jack_nframes_t Nframes, void* Arg);
 	static void ShutdownCallback(void* Arg);
@@ -87,4 +96,7 @@ private:
 
 	// Internal state
 	void UpdatePerformanceMetrics();
+
+	// Internal helpers
+	void ComputeInputLevels(jack_nframes_t Nframes);
 }; 

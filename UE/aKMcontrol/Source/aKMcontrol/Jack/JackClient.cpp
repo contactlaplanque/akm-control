@@ -5,6 +5,7 @@
 #include "Misc/DateTime.h"
 #include "HAL/PlatformProcess.h"
 #include "Misc/Paths.h"
+#include "Math/UnrealMathUtility.h"
 
 FJackClient::FJackClient()
 	: JackClient(nullptr)
@@ -543,6 +544,7 @@ int FJackClient::ProcessCallback(jack_nframes_t Nframes, void* Arg)
 	if (Client)
 	{
 		Client->UpdatePerformanceMetrics();
+		Client->ComputeInputLevels(Nframes);
 	}
 	return 0;
 }
@@ -601,6 +603,58 @@ FString FJackClient::GetServerInfo() const
 	return Info;
 }
 
+// ================== Audio Level Helpers ==================
+
+void FJackClient::ComputeInputLevels(jack_nframes_t Nframes)
+{
+	// Ensure InputLevels array matches number of ports
+	if (InputLevels.Num() != InputPorts.Num())
+	{
+		InputLevels.SetNumZeroed(InputPorts.Num());
+	}
+
+	for (int32 PortIdx = 0; PortIdx < InputPorts.Num(); ++PortIdx)
+	{
+		jack_port_t* Port = InputPorts[PortIdx];
+		if (!Port)
+		{
+			InputLevels[PortIdx] = 0.0f;
+			continue;
+		}
+
+		jack_default_audio_sample_t* Buffer = static_cast<jack_default_audio_sample_t*>(jack_port_get_buffer(Port, Nframes));
+		if (!Buffer)
+		{
+			InputLevels[PortIdx] = 0.0f;
+			continue;
+		}
+
+		double SumSq = 0.0;
+		for (uint32 Frame = 0; Frame < Nframes; ++Frame)
+		{
+			float Sample = Buffer[Frame];
+			SumSq += static_cast<double>(Sample) * static_cast<double>(Sample);
+		}
+
+		float RMS = 0.0f;
+		if (Nframes > 0)
+		{
+			RMS = FMath::Sqrt(static_cast<float>(SumSq / static_cast<double>(Nframes)));
+		}
+
+		InputLevels[PortIdx] = RMS;
+	}
+}
+
+float FJackClient::GetInputLevel(int32 ChannelIndex) const
+{
+	if (InputLevels.IsValidIndex(ChannelIndex))
+	{
+		return InputLevels[ChannelIndex];
+	}
+	return 0.0f;
+}
+
 bool FJackClient::RegisterAudioPorts(int32 NumInputs, int32 NumOutputs, const FString& BaseName)
 {
 	if (!IsConnected())
@@ -648,6 +702,9 @@ bool FJackClient::RegisterAudioPorts(int32 NumInputs, int32 NumOutputs, const FS
 		}
 	}
 
+	// Initialize level arrays
+	InputLevels.SetNumZeroed(NumInputs);
+
 	if (bSuccess)
 	{
 		UE_LOG(LogTemp, Log, TEXT("JackClient: Successfully registered %d input and %d output ports"), NumInputs, NumOutputs);
@@ -682,6 +739,9 @@ void FJackClient::UnregisterAllPorts()
 	}
 	OutputPorts.Empty();
 
+	// Clear cached levels
+	InputLevels.Empty();
+
 	UE_LOG(LogTemp, Log, TEXT("JackClient: Unregistered all ports"));
 }
 
@@ -693,4 +753,44 @@ TArray<jack_port_t*> FJackClient::GetInputPorts() const
 TArray<jack_port_t*> FJackClient::GetOutputPorts() const
 {
 	return OutputPorts;
+}
+
+TArray<FString> FJackClient::GetAllClients() const
+{
+	TArray<FString> ClientNames;
+	if (!IsConnected())
+	{
+		return ClientNames;
+	}
+
+	// Use a TSet to store unique client names
+	TSet<FString> UniqueClientNames;
+
+	// Get all ports on the server
+	const char** Ports = jack_get_ports(JackClient, nullptr, nullptr, 0);
+	if (Ports)
+	{
+		for (int i = 0; Ports[i] != nullptr; i++)
+		{
+			FString PortName(Ports[i]);
+			FString ClientName;
+			if (PortName.Split(TEXT(":"), &ClientName, nullptr))
+			{
+				UniqueClientNames.Add(ClientName);
+			}
+		}
+		// Free the memory allocated by jack_get_ports
+		jack_free(Ports);
+	}
+
+	// Exclude our own client name
+	FString OwnName = GetClientName();
+	if(OwnName.Contains(TEXT(":")))
+	{
+		OwnName.Split(TEXT(":"), &OwnName, nullptr);
+	}
+	UniqueClientNames.Remove(OwnName);
+
+
+	return UniqueClientNames.Array();
 } 

@@ -23,12 +23,18 @@ void AImGuiActor::BeginPlay()
 	
 	// Ensure ImGui input is disabled by default so camera controls work
 	FImGuiModule::Get().GetProperties().SetInputEnabled(false);
+	
+	// Scale ImGui style by 2x (this should be done once)
+	ImGui::GetStyle().ScaleAllSizes(2.0f);
 }
 
 // Called every frame
 void AImGuiActor::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
+
+    // Scale ImGui font by 2x (apply every frame to ensure it takes effect)
+    ImGui::GetIO().FontGlobalScale = 2.0f;
 
     ImGui::Begin("Main Window");
 
