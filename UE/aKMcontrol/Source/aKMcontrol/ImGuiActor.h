@@ -5,7 +5,6 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "ImGuiModule.h"
-#include "JackAudioInterface.h"
 
 #include "ImGuiActor.generated.h"
 
@@ -34,26 +33,6 @@ public:
 	bool bIsPickingActor = false;
 
 private:
-	// Pointer to the Jack Audio Interface actor
-	UPROPERTY()
-	AJackAudioInterface* JackInterface;
-	
-	// Level meter state for all channels
-	TArray<float> SmoothedRmsLevels;
-	TArray<float> PeakLevels;
-	TArray<float> TimesOfLastPeak;
-
-	// Find JackAudioInterface in the scene
-	AJackAudioInterface* FindJackAudioInterface();
-	
-	// Render Jack audio interface section
-	void RenderJackAudioSection();
-	
-	// Render the audio level meter widget
-	void RenderLevelMeter();
-
-	// Render existing functionality section
-	void RenderActorPickingSection();
 	
 
 };
