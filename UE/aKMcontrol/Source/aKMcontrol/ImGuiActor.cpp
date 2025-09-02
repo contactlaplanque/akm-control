@@ -29,6 +29,8 @@ void AImGuiActor::Tick(float DeltaTime)
     // Scale ImGui font by 2x (apply every frame to ensure it takes effect)
     ImGui::GetIO().FontGlobalScale = 2.0f;
 
+	ImGui::SetNextWindowSize(ImVec2(400, 250));
+	ImGui::SetNextWindowPos(ImVec2(25, 25));
     ImGui::Begin("Main Window");
 
     // Show ImGui input capture status
@@ -56,7 +58,45 @@ void AImGuiActor::Tick(float DeltaTime)
     
     ImGui::End();
 
-}
+	// akM Server Window
+
+	if (SpatServerManager != nullptr)
+	{
+		ImGui::SetNextWindowSize(ImVec2(800, 500));
+		ImGui::SetNextWindowPos(ImVec2(25, 300));
+		ImGui::Begin("akM Server");
+
+		bool bServerAlive = SpatServerManager->bIsServerAlive;
+		ImVec4 ServerStatusColor = bServerAlive ? ImVec4(0, 1, 0, 1) : ImVec4(1, 0, 0, 1);
+		ImGui::TextColored(ServerStatusColor, bServerAlive ? "ONLINE" : "OFFLINE");
+
+		if (bServerAlive) 
+		{
+			if (ImGui::Button("STOP"))
+			{
+				UFunction* StopServerBlueprintFunction = SpatServerManager->FindFunction(TEXT("StopSpatServer"));
+				if (StopServerBlueprintFunction != nullptr)
+				{
+					
+					SpatServerManager->ProcessEvent(StopServerBlueprintFunction, nullptr);
+					SpatServerManager->StopSpatServerProcess();
+				}
+				else
+				{
+					UE_LOG(LogTemp, Error, TEXT("StopServerBlueprintFunction not found."));
+				}
+			}
+		}
+		else
+		{
+			if (ImGui::Button("START"))
+			
+				SpatServerManager->StartSpatServer();
+			}
+		}
+		ImGui::End();
+	}
+
 
 void AImGuiActor::ToggleImGuiInput()
 {

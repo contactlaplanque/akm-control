@@ -28,6 +28,17 @@ public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 
+	// Blueprint-callable entry point to initialize and start the spat server
+	UFUNCTION(BlueprintCallable, Category="akM|SpatServer")
+	bool StartSpatServer();
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="ServerStatus")
+	bool bIsServerAlive = false;
+
+	bool StartSpatServerProcess();
+	void StopSpatServerProcess();
+	
+
 private:
 	// Child process handle and pipes for stdout/stderr
 	FProcHandle SpatServerProcessHandle;
@@ -42,8 +53,6 @@ private:
 	bool bIsServerRunning;
 
 	// Helpers
-	void StartSpatServer();
-	void StopSpatServer();
 	void PumpSpatServerOutput();
 	bool ValidateRequiredPaths() const;
 

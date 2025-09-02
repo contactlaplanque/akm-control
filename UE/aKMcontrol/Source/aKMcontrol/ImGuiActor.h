@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "ImGuiModule.h"
+#include "akMSpatServerManager.h"
 
 #include "ImGuiActor.generated.h"
 
@@ -16,6 +17,9 @@ class AKMCONTROL_API AImGuiActor : public AActor
 public:	
 	// Sets default values for this actor's properties
 	AImGuiActor();
+
+	UPROPERTY(EditAnywhere, Category="Object References")
+	AakMSpatServerManager* SpatServerManager;
 
 protected:
 	// Called when the game starts or when spawned

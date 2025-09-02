@@ -24,19 +24,6 @@ AakMSpatServerManager::AakMSpatServerManager()
 void AakMSpatServerManager::BeginPlay()
 {
 	Super::BeginPlay();
-
-	// Configure expected paths (Windows)
-	SuperColliderInstallDir = TEXT("C:/Program Files/SuperCollider-3.13.0/");
-	const FString UserDir = FPaths::ConvertRelativePathToFull(FPlatformProcess::UserDir());
-	SpatServerScriptPath = FPaths::Combine(UserDir, TEXT("akm-server"), TEXT("akM_spatServer.scd"));
-
-	if (!ValidateRequiredPaths())
-	{
-		UE_LOG(LogSpatServer, Error, TEXT("Required files not found. sclang: %s, script: %s"), *SuperColliderInstallDir, *SpatServerScriptPath);
-		return;
-	}
-
-	StartSpatServer();
 }
 
 // Called every frame
@@ -49,8 +36,30 @@ void AakMSpatServerManager::Tick(float DeltaTime)
 
 void AakMSpatServerManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	StopSpatServer();
+	StopSpatServerProcess();
 	Super::EndPlay(EndPlayReason);
+}
+
+bool AakMSpatServerManager::StartSpatServer()
+{
+	if (bIsServerRunning)
+	{
+		UE_LOG(LogSpatServer, Warning, TEXT("Spat server already running."));
+		return false;
+	}
+
+	// Configure expected paths (Windows)
+	SuperColliderInstallDir = TEXT("C:/Program Files/SuperCollider-3.13.0/");
+	const FString UserDir = FPaths::ConvertRelativePathToFull(FPlatformProcess::UserDir());
+	SpatServerScriptPath = FPaths::Combine(UserDir, TEXT("akm-server"), TEXT("akM_spatServer.scd"));
+
+	if (!ValidateRequiredPaths())
+	{
+		UE_LOG(LogSpatServer, Error, TEXT("Required files not found. sclang: %s, script: %s"), *SuperColliderInstallDir, *SpatServerScriptPath);
+		return false;
+	}
+
+	return StartSpatServerProcess();
 }
 
 bool AakMSpatServerManager::ValidateRequiredPaths() const
@@ -72,11 +81,11 @@ bool AakMSpatServerManager::ValidateRequiredPaths() const
 	return bExeExists && bScriptExists;
 }
 
-void AakMSpatServerManager::StartSpatServer()
+bool AakMSpatServerManager::StartSpatServerProcess()
 {
 	if (bIsServerRunning)
 	{
-		return;
+		return false;
 	}
 
 	// Create pipes for capturing stdout
@@ -108,13 +117,14 @@ void AakMSpatServerManager::StartSpatServer()
 		FPlatformProcess::ClosePipe(ReadPipe, WritePipe);
 		ReadPipe = nullptr;
 		WritePipe = nullptr;
-		return;
+		return false;
 	}
 
 	bIsServerRunning = true;
+	return true;
 }
 
-void AakMSpatServerManager::StopSpatServer()
+void AakMSpatServerManager::StopSpatServerProcess()
 {
 	if (!bIsServerRunning)
 	{
@@ -163,7 +173,7 @@ void AakMSpatServerManager::PumpSpatServerOutput()
 	if (SpatServerProcessHandle.IsValid() && !FPlatformProcess::IsProcRunning(SpatServerProcessHandle))
 	{
 		UE_LOG(LogSpatServer, Warning, TEXT("sclang process exited."));
-		StopSpatServer();
+		StopSpatServerProcess();
 	}
 }
 
