@@ -45,5 +45,6 @@ private:
 	void RenderAkMServerWindow() const;
 	void RenderAudioMonitoringWindow() const;
 	
+	
 
 };

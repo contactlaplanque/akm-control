@@ -20,6 +20,7 @@ void AImGuiActor::BeginPlay()
 	
 	// Scale ImGui style by 2x (this should be done once)
 	ImGui::GetStyle().ScaleAllSizes(2.0f);
+	
 }
 
 void AImGuiActor::Tick(float DeltaTime)
@@ -76,7 +77,7 @@ void AImGuiActor::RenderAkMServerWindow() const
 {
 	if (SpatServerManager != nullptr)
 	{
-		ImGui::SetNextWindowSize(ImVec2(800, 500));
+		ImGui::SetNextWindowSize(ImVec2(1000, 500));
 		ImGui::SetNextWindowPos(ImVec2(25, 300));
 		ImGui::Begin("akM Server");
 
@@ -109,6 +110,21 @@ void AImGuiActor::RenderAkMServerWindow() const
 			}
 		}
 
+		// Scrollable child region
+		ImGui::BeginChild("ConsoleRegion", ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
+
+		for (const FString& Line : SpatServerManager->ImGuiConsoleBuffer)
+		{
+			ImGui::TextUnformatted(TCHAR_TO_ANSI(*Line));
+		}
+
+		// Auto-scroll to bottom
+		if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
+			ImGui::SetScrollHereY(1.0f);
+		
+
+		ImGui::EndChild();
+		
 		ImGui::End();
 	}
 	else {
@@ -120,8 +136,8 @@ void AImGuiActor::RenderAudioMonitoringWindow() const
 {
 	if (AudioManager != nullptr) {
 		
-		ImGui::SetNextWindowSize(ImVec2(800, 500));
-		ImGui::SetNextWindowPos(ImVec2(850, 300));
+		ImGui::SetNextWindowSize(ImVec2(800, 650));
+		ImGui::SetNextWindowPos(ImVec2(1050, 300));
 		ImGui::Begin("Audio Levels");
 		
 		if (AudioManager->SmoothedRmsLevels.IsEmpty())

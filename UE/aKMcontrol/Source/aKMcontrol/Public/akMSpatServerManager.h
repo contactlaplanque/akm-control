@@ -37,6 +37,10 @@ public:
 
 	bool StartSpatServerProcess();
 	void StopSpatServerProcess();
+
+	// Holds console log lines for ImGui rendering
+	TArray<FString> ImGuiConsoleBuffer;
+	int32 MaxConsoleLines = 500;
 	
 
 private:

@@ -164,7 +164,16 @@ void AakMSpatServerManager::PumpSpatServerOutput()
 		{
 			if (!Line.IsEmpty())
 			{
-				UE_LOG(LogSpatServer, Log, TEXT("sclang: %s"), *Line);
+				//UE_LOG(LogSpatServer, Log, TEXT("sclang: %s"), *Line);
+
+				// Write to ImGui buffer
+				ImGuiConsoleBuffer.Add(Line);
+
+				// Limit size
+				if (ImGuiConsoleBuffer.Num() > MaxConsoleLines)
+				{
+					ImGuiConsoleBuffer.RemoveAt(0, ImGuiConsoleBuffer.Num() - MaxConsoleLines);
+				}
 			}
 		}
 	}
@@ -173,6 +182,7 @@ void AakMSpatServerManager::PumpSpatServerOutput()
 	if (SpatServerProcessHandle.IsValid() && !FPlatformProcess::IsProcRunning(SpatServerProcessHandle))
 	{
 		UE_LOG(LogSpatServer, Warning, TEXT("sclang process exited."));
+		ImGuiConsoleBuffer.Add(TEXT("sclang process exited."));
 		StopSpatServerProcess();
 	}
 }
