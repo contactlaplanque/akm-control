@@ -6,6 +6,7 @@
 #include "GameFramework/Actor.h"
 #include "ImGuiModule.h"
 #include "akMSpatServerManager.h"
+#include "akMControlAudioManager.h"
 
 #include "ImGuiActor.generated.h"
 
@@ -20,6 +21,9 @@ public:
 
 	UPROPERTY(EditAnywhere, Category="Object References")
 	AakMSpatServerManager* SpatServerManager;
+
+	UPROPERTY(EditAnywhere, Category="Object References")
+	AakMControlAudioManager* AudioManager;
 
 protected:
 	// Called when the game starts or when spawned
@@ -37,6 +41,9 @@ public:
 	bool bIsPickingActor = false;
 
 private:
+
+	void RenderAkMServerWindow() const;
+	void RenderAudioMonitoringWindow() const;
 	
 
 };

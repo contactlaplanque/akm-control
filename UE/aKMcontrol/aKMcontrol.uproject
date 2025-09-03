@@ -25,5 +25,8 @@
 			"Name": "OSC",
 			"Enabled": true
 		}
+	],
+	"TargetPlatforms": [
+		"Windows"
 	]
 }
