@@ -44,6 +44,27 @@ private:
 
 	void RenderAkMServerWindow() const;
 	void RenderAudioMonitoringWindow() const;
+
+	// New client prompt state
+	struct FPendingClientPrompt
+	{
+		FString ClientName;
+		int32 NumInputs = 0;
+		int32 NumOutputs = 0;
+	};
+	TArray<FPendingClientPrompt> PendingClientPrompts;
+	bool bImGuiOpenNextPopup = false;
+	bool bInitialClientScanDone = false;
+
+	// Event bindings
+	UFUNCTION()
+	void OnNewJackClient(const FString& ClientName, int32 NumInputs, int32 NumOutputs);
+
+	UFUNCTION()
+	void OnJackClientDisconnected(const FString& ClientName);
+
+	// Helper to draw popup
+	void DrawNewClientPopup();
 	
 	
 

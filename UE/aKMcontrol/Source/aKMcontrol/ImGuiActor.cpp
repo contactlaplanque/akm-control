@@ -4,6 +4,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "ImGuiModule.h"
 #include "Engine/Engine.h"
+#include "UEJackAudioLinkSubsystem.h"
 #include "GameFramework/PlayerController.h"
 
 AImGuiActor::AImGuiActor()
@@ -19,8 +20,18 @@ void AImGuiActor::BeginPlay()
 	FImGuiModule::Get().GetProperties().SetInputEnabled(false);
 	
 	// Scale ImGui style by 2x (this should be done once)
-	ImGui::GetStyle().ScaleAllSizes(2.0f);
-	
+	// ImGui::GetStyle().ScaleAllSizes(2.0f);
+
+	// Bind UEJackAudioLink events to drive UI prompts
+	if (GEngine)
+	{
+		if (UUEJackAudioLinkSubsystem* Subsystem = GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>())
+		{
+			Subsystem->OnNewJackClientConnected.AddDynamic(this, &AImGuiActor::OnNewJackClient);
+			Subsystem->OnJackClientDisconnected.AddDynamic(this, &AImGuiActor::OnJackClientDisconnected);
+			// Defer initial scan until akM server is ready (handled in Tick)
+		}
+	}
 }
 
 void AImGuiActor::Tick(float DeltaTime)
@@ -28,10 +39,10 @@ void AImGuiActor::Tick(float DeltaTime)
     Super::Tick(DeltaTime);
 
     // Scale ImGui font by 2x (apply every frame to ensure it takes effect)
-    ImGui::GetIO().FontGlobalScale = 2.0f;
+    // ImGui::GetIO().FontGlobalScale = 2.0f;
 
-	ImGui::SetNextWindowSize(ImVec2(400, 250));
-	ImGui::SetNextWindowPos(ImVec2(25, 25));
+	ImGui::SetNextWindowSize(ImVec2(400, 250), ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowPos(ImVec2(25, 25), ImGuiCond_FirstUseEver);
     ImGui::Begin("Main Window");
 
     // Show ImGui input capture status
@@ -59,6 +70,33 @@ void AImGuiActor::Tick(float DeltaTime)
     
     ImGui::End();
 
+	DrawNewClientPopup();
+
+	// After akM server is ready (scsynth wired to Unreal), run one-time scan for already connected clients
+	if (!bInitialClientScanDone && SpatServerManager && SpatServerManager->bAKMserverAudioOutputPortsConnected)
+	{
+		if (GEngine)
+		{
+			if (UUEJackAudioLinkSubsystem* Subsystem = GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>())
+			{
+				const FString UnrealClientName = Subsystem->GetJackClientName();
+				TArray<FString> Clients = Subsystem->GetConnectedClients();
+				for (const FString& Client : Clients)
+				{
+					if (Client.Equals(TEXT("scsynth"), ESearchCase::IgnoreCase)) { continue; }
+					if (!UnrealClientName.IsEmpty() && Client.Equals(UnrealClientName, ESearchCase::IgnoreCase)) { continue; }
+					TArray<FString> Inputs, Outputs;
+					Subsystem->GetClientPorts(Client, Inputs, Outputs);
+					if (Inputs.Num() > 0 || Outputs.Num() > 0)
+					{
+						OnNewJackClient(Client, Inputs.Num(), Outputs.Num());
+					}
+				}
+				bInitialClientScanDone = true;
+			}
+		}
+	}
+
 	// akM Server Window
 	RenderAkMServerWindow();
 
@@ -77,13 +115,20 @@ void AImGuiActor::RenderAkMServerWindow() const
 {
 	if (SpatServerManager != nullptr)
 	{
-		ImGui::SetNextWindowSize(ImVec2(1000, 500));
-		ImGui::SetNextWindowPos(ImVec2(25, 300));
+		ImGui::SetNextWindowSize(ImVec2(1000, 500), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowPos(ImVec2(25, 300), ImGuiCond_FirstUseEver);
 		ImGui::Begin("akM Server");
 
 		bool bServerAlive = SpatServerManager->bIsServerAlive;
-		ImVec4 ServerStatusColor = bServerAlive ? ImVec4(0, 1, 0, 1) : ImVec4(1, 0, 0, 1);
-		ImGui::TextColored(ServerStatusColor, bServerAlive ? "ONLINE" : "OFFLINE");
+		bool bServerIsStarting = SpatServerManager->bServerIsStarting;
+		ImVec4 ServerStatusColor = bServerIsStarting ? ImVec4(1, 1, 0, 1) : bServerAlive ? ImVec4(0,1,0,1) : ImVec4(1, 0, 0, 1);
+		ImGui::AlignTextToFramePadding();
+		ImGui::TextColored(ServerStatusColor, bServerIsStarting ? "SERVER STARTING..." : bServerAlive ? "ONLINE" : "OFFLINE");
+
+		if (bServerIsStarting)
+			ImGui::BeginDisabled();
+
+		ImGui::SameLine();
 
 		if (bServerAlive) 
 		{
@@ -109,6 +154,47 @@ void AImGuiActor::RenderAkMServerWindow() const
 				SpatServerManager->StartSpatServer();
 			}
 		}
+		
+		if (bServerIsStarting)
+			ImGui::EndDisabled();
+
+		// Info row: JACK CPU load and scsynth port counts
+		{
+			float CpuLoad = -1.0f;
+			int32 NumScInputs = -1;
+			int32 NumScOutputs = -1;
+			if (GEngine)
+			{
+				if (UUEJackAudioLinkSubsystem* Subsystem = GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>())
+				{
+					CpuLoad = Subsystem->GetCpuLoad(); // 0..100
+					TArray<FString> ScIn, ScOut;
+					Subsystem->GetClientPorts(TEXT("scsynth"), ScIn, ScOut);
+					NumScInputs = ScIn.Num();
+					NumScOutputs = ScOut.Num();
+				}
+			}
+
+			if (CpuLoad >= 0.0f)
+			{
+				ImGui::Text("CPU: %.1f%%", CpuLoad);
+			}
+			else
+			{
+				ImGui::Text("CPU: N/A");
+			}
+			ImGui::SameLine();
+			if (NumScInputs >= 0 && NumScOutputs >= 0)
+			{
+				ImGui::Text("scsynth: %d in / %d out", NumScInputs, NumScOutputs);
+			}
+			else
+			{
+				ImGui::Text("scsynth: N/A");
+			}
+		}
+
+		ImGui::Separator();
 
 		// Scrollable child region
 		ImGui::BeginChild("ConsoleRegion", ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
@@ -136,8 +222,8 @@ void AImGuiActor::RenderAudioMonitoringWindow() const
 {
 	if (AudioManager != nullptr) {
 		
-		ImGui::SetNextWindowSize(ImVec2(800, 650));
-		ImGui::SetNextWindowPos(ImVec2(1050, 300));
+		ImGui::SetNextWindowSize(ImVec2(800, 650), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowPos(ImVec2(1050, 300), ImGuiCond_FirstUseEver);
 		ImGui::Begin("Audio Levels");
 		
 		if (AudioManager->SmoothedRmsLevels.IsEmpty())
@@ -254,6 +340,101 @@ void AImGuiActor::RenderAudioMonitoringWindow() const
 	}
 	else {
 		UE_LOG(LogTemp, Warning, TEXT("AudioManager not found, Audio Monitoring window not rendered"));
+	}
+}
+
+void AImGuiActor::OnNewJackClient(const FString& ClientName, int32 NumInputs, int32 NumOutputs)
+{
+	// Ignore scsynth (handled by manager) and our own Unreal client
+	if (ClientName.Equals(TEXT("scsynth"), ESearchCase::IgnoreCase))
+	{
+		return;
+	}
+	// Ignore JACK system device
+	if (ClientName.Equals(TEXT("system"), ESearchCase::IgnoreCase))
+	{
+		return;
+	}
+	UUEJackAudioLinkSubsystem* Subsystem = (GEngine ? GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>() : nullptr);
+	if (Subsystem)
+	{
+		const FString UnrealClient = Subsystem->GetJackClientName();
+		if (!UnrealClient.IsEmpty() && ClientName.Equals(UnrealClient, ESearchCase::IgnoreCase))
+		{
+			return;
+		}
+	}
+
+	FPendingClientPrompt P; P.ClientName = ClientName; P.NumInputs = NumInputs; P.NumOutputs = NumOutputs;
+	PendingClientPrompts.Add(MoveTemp(P));
+	bImGuiOpenNextPopup = true;
+}
+
+void AImGuiActor::OnJackClientDisconnected(const FString& ClientName)
+{
+	// Remove pending prompt for this client if present
+	for (int32 i = PendingClientPrompts.Num() - 1; i >= 0; --i)
+	{
+		if (PendingClientPrompts[i].ClientName.Equals(ClientName, ESearchCase::IgnoreCase))
+		{
+			PendingClientPrompts.RemoveAt(i);
+		}
+	}
+}
+
+void AImGuiActor::DrawNewClientPopup()
+{
+	if (PendingClientPrompts.Num() == 0)
+	{
+		return;
+	}
+	if (bImGuiOpenNextPopup)
+	{
+		ImGui::OpenPopup("NewJackClientPopup");
+		bImGuiOpenNextPopup = false;
+	}
+
+	if (ImGui::BeginPopupModal("NewJackClientPopup", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+	{
+		const FPendingClientPrompt& Prompt = PendingClientPrompts[0];
+		ImGui::Text("New client connected on Jack server: %s - %d inputs, %d outputs", TCHAR_TO_ANSI(*Prompt.ClientName), Prompt.NumInputs, Prompt.NumOutputs);
+		ImGui::Separator();
+		ImGui::TextWrapped("Would you like to consider this as an audio input for sources in akM server and connect the outputs of this client to akM server?");
+
+		bool bDoConnect = false;
+		if (ImGui::Button("Yes", ImVec2(120, 0)))
+		{
+			bDoConnect = true;
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Cancel", ImVec2(120, 0)))
+		{
+			PendingClientPrompts.RemoveAt(0);
+			if (PendingClientPrompts.Num() > 0)
+			{
+				bImGuiOpenNextPopup = true;
+			}
+			ImGui::CloseCurrentPopup();
+			ImGui::EndPopup();
+			return;
+		}
+
+		if (bDoConnect)
+		{
+			// Ask the manager to perform actual connects and validation
+			if (SpatServerManager)
+			{
+				SpatServerManager->AcceptExternalClient(Prompt.ClientName, Prompt.NumInputs, Prompt.NumOutputs);
+			}
+			PendingClientPrompts.RemoveAt(0);
+			if (PendingClientPrompts.Num() > 0)
+			{
+				bImGuiOpenNextPopup = true;
+			}
+			ImGui::CloseCurrentPopup();
+		}
+
+		ImGui::EndPopup();
 	}
 }
 
