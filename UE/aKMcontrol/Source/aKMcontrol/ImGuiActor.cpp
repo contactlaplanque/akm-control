@@ -15,6 +15,9 @@ AImGuiActor::AImGuiActor()
 void AImGuiActor::BeginPlay()
 {
 	Super::BeginPlay();
+
+	MainViewLocalSize = FVector2D(0.0f, 0.0f);
+	MainViewLocalTopLeft = FVector2D(0.0f, 0.0f);
 	
 	// Ensure ImGui input is disabled by default so camera controls work
 	FImGuiModule::Get().GetProperties().SetInputEnabled(false);
@@ -102,13 +105,25 @@ void AImGuiActor::Tick(float DeltaTime)
 
 	// Audio Monitoring Window
 	RenderAudioMonitoringWindow();
+
+	// Disable ImGui input if mouse is over main view
+	if (ImGui::IsMousePosValid())
+	{
+		bool isMouseXinRange = MainViewLocalTopLeft.X <= ImGui::GetMousePos().x && ImGui::GetMousePos().x <= MainViewLocalTopLeft.X + MainViewLocalSize.X;
+		bool isMouseYinRange = MainViewLocalTopLeft.Y <= ImGui::GetMousePos().y && ImGui::GetMousePos().y <= MainViewLocalTopLeft.Y + MainViewLocalSize.Y;
+		if (isMouseXinRange || isMouseYinRange)
+		{
+			SetImGuiInput(false);
+		}
+	}
 	
 }
 
 
-void AImGuiActor::ToggleImGuiInput()
+void AImGuiActor::SetImGuiInput(bool NewState)
 {
-	FImGuiModule::Get().GetProperties().ToggleInput();
+	//FImGuiModule::Get().GetProperties().ToggleInput();
+	FImGuiModule::Get().GetProperties().SetInputEnabled(NewState);
 }
 
 void AImGuiActor::RenderAkMServerWindow() const

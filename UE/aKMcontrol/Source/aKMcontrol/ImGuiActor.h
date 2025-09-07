@@ -34,7 +34,13 @@ public:
 	virtual void Tick(float DeltaTime) override;
 
 	UFUNCTION(BlueprintCallable)
-	static void ToggleImGuiInput();
+	static void SetImGuiInput(bool NewState);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="ImGui")
+	FVector2D MainViewLocalTopLeft;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="ImGui")
+	FVector2D MainViewLocalSize;
 
 	// Actor Picking Variables
 	TWeakObjectPtr<AActor> PickedActor;
