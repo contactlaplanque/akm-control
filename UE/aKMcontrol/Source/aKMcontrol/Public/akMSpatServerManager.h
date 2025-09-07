@@ -8,6 +8,8 @@
 
 DECLARE_LOG_CATEGORY_EXTERN(LogSpatServer, Log, All);
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnRequestedOSCSend_Float, FString, OSCAddress, float, Value);
+
 UCLASS()
 class AKMCONTROL_API AakMSpatServerManager : public AActor
 {
@@ -72,6 +74,42 @@ public:
 	// Accept a newly detected external JACK client and wire it to scsynth and Unreal
 	UFUNCTION(BlueprintCallable, Category="akM|SpatServer")
 	void AcceptExternalClient(const FString& ClientName, int32 NumInputPorts, int32 NumOutputPorts);
+
+
+	UFUNCTION(BlueprintCallable, Category="akM|SpatServer")
+	void TestValueChangeCallback(float value);
+
+	// Events to send OSC
+	UPROPERTY(BlueprintAssignable, Category="akM|Events")
+	FOnRequestedOSCSend_Float OnRequestedOSCSend_Float;
+
+	// Functions to send OSC
+	void SendOSCFloat(const FString& OSCAddress, float Value);
+	
+	// CONTROL PARAMETERS
+
+	// General Server Parameters
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="akM|GeneralParameters")
+	float systemGain = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="akM|GeneralParameters")
+	float reverbDecay = 3.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="akM|GeneralParameters")
+	float reverbFeedback = 0.64f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="akM|GeneralParameters")
+	float satsFilterFrequency = 110.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="akM|GeneralParameters")
+	float satsFilterRq = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="akM|GeneralParameters")
+	float subsFilterFrequency = 80.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="akM|GeneralParameters")
+	float subsFilterRq = 1.0f;
 
 private:
 	// Child process handle and pipes for stdout/stderr

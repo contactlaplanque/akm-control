@@ -525,3 +525,15 @@ void AakMSpatServerManager::AcceptExternalClient(const FString& ClientName, int3
 	UE_LOG(LogSpatServer, Log, TEXT("Accepted client '%s' and connected %d channels to scsynth and Unreal inputs."), *ClientName, NumToConnect);
 }
 
+void AakMSpatServerManager::TestValueChangeCallback(float value)
+{
+	UE_LOG(LogSpatServer, Log, TEXT("TestValueChangeCallback: %f"), value);
+}
+
+void AakMSpatServerManager::SendOSCFloat(const FString& OSCAddress, float Value)
+{
+	OnRequestedOSCSend_Float.Broadcast(OSCAddress, Value);
+}
+
+
+

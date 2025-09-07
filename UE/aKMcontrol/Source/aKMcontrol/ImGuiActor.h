@@ -7,6 +7,7 @@
 #include "ImGuiModule.h"
 #include "akMSpatServerManager.h"
 #include "akMControlAudioManager.h"
+#include "akMInternalLogCapture.h"
 
 #include "ImGuiActor.generated.h"
 
@@ -28,6 +29,8 @@ public:
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
+	// Called when the game ends or actor is destroyed
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 public:	
 	// Called every frame
@@ -42,6 +45,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="ImGui")
 	FVector2D MainViewLocalSize;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="ImGui")
+	FVector2D MainViewAbsoluteSize;
+
 	// Actor Picking Variables
 	TWeakObjectPtr<AActor> PickedActor;
 	bool bIsPickingActor = false;
@@ -50,6 +56,8 @@ private:
 
 	void RenderAkMServerWindow() const;
 	void RenderAudioMonitoringWindow() const;
+	void RenderInternalLogsWindow() const;
+	void RenderGeneralServerParametersWindow() const;
 
 	// New client prompt state
 	struct FPendingClientPrompt
@@ -71,7 +79,11 @@ private:
 
 	// Helper to draw popup
 	void DrawNewClientPopup();
+
+	int BottomBarHeight = 30;
 	
+	// Internal logs capture device
+	TUniquePtr<FAkMInternalLogCapture> InternalLogCapture;
 	
 
 };
