@@ -9,6 +9,7 @@
 #include "UEJackAudioLinkSubsystem.h"
 
 DEFINE_LOG_CATEGORY(LogSpatServer);
+DEFINE_LOG_CATEGORY(LogAkMOSC);
 
 // Sets default values
 AakMSpatServerManager::AakMSpatServerManager()
@@ -525,14 +526,27 @@ void AakMSpatServerManager::AcceptExternalClient(const FString& ClientName, int3
 	UE_LOG(LogSpatServer, Log, TEXT("Accepted client '%s' and connected %d channels to scsynth and Unreal inputs."), *ClientName, NumToConnect);
 }
 
-void AakMSpatServerManager::TestValueChangeCallback(float value)
+void AakMSpatServerManager::PrintToInternalLogs_OSC(FString message)
 {
-	UE_LOG(LogSpatServer, Log, TEXT("TestValueChangeCallback: %f"), value);
+	UE_LOG(LogAkMOSC, Log, TEXT("%s"), *message);
 }
 
 void AakMSpatServerManager::SendOSCFloat(const FString& OSCAddress, float Value)
 {
 	OnRequestedOSCSend_Float.Broadcast(OSCAddress, Value);
+	//UE_LOG(LogSpatServer, Log, TEXT("OSC Send: %s %f"), *OSCAddress, Value);
+}
+
+void AakMSpatServerManager::SendOSCInt(const FString& OSCAddress, int32 Value)
+{
+	OnRequestedOSCSend_Int.Broadcast(OSCAddress, Value);
+	//UE_LOG(LogSpatServer, Log, TEXT("OSC Send: %s %d"), *OSCAddress, Value);
+}
+
+void AakMSpatServerManager::SendOSCFloatArray(const FString& OSCAddress, const TArray<float>& Value)
+{
+	OnRequestedOSCSend_FloatArray.Broadcast(OSCAddress, Value);
+	//UE_LOG(LogSpatServer, Log, TEXT("OSC Send Float Array to %s"), *OSCAddress);
 }
 
 

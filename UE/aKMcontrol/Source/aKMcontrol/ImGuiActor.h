@@ -58,6 +58,7 @@ private:
 	void RenderAudioMonitoringWindow() const;
 	void RenderInternalLogsWindow() const;
 	void RenderGeneralServerParametersWindow() const;
+	void RenderSpeakersParametersWindow() const;
 
 	// New client prompt state
 	struct FPendingClientPrompt

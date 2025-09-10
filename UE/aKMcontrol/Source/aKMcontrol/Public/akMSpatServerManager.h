@@ -7,8 +7,11 @@
 #include "akMSpatServerManager.generated.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(LogSpatServer, Log, All);
+DECLARE_LOG_CATEGORY_EXTERN(LogAkMOSC, Log, All);
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnRequestedOSCSend_Float, FString, OSCAddress, float, Value);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnRequestedOSCSend_Int, FString, OSCAddress, int32, Value);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnRequestedOSCSend_FloatArray, FString, OSCAddress, const TArray<float>&, Value);
 
 UCLASS()
 class AKMCONTROL_API AakMSpatServerManager : public AActor
@@ -75,16 +78,23 @@ public:
 	UFUNCTION(BlueprintCallable, Category="akM|SpatServer")
 	void AcceptExternalClient(const FString& ClientName, int32 NumInputPorts, int32 NumOutputPorts);
 
-
 	UFUNCTION(BlueprintCallable, Category="akM|SpatServer")
-	void TestValueChangeCallback(float value);
-
+	void PrintToInternalLogs_OSC(FString message);
+	
 	// Events to send OSC
 	UPROPERTY(BlueprintAssignable, Category="akM|Events")
 	FOnRequestedOSCSend_Float OnRequestedOSCSend_Float;
 
+	UPROPERTY(BlueprintAssignable, Category="akM|Events")
+	FOnRequestedOSCSend_Int OnRequestedOSCSend_Int;
+
+	UPROPERTY(BlueprintAssignable, Category="akM|Events")
+	FOnRequestedOSCSend_FloatArray OnRequestedOSCSend_FloatArray;
+
 	// Functions to send OSC
 	void SendOSCFloat(const FString& OSCAddress, float Value);
+	void SendOSCInt(const FString& OSCAddress, int32 Value);
+	void SendOSCFloatArray(const FString& OSCAddress, const TArray<float>& Value);
 	
 	// CONTROL PARAMETERS
 
@@ -111,6 +121,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="akM|GeneralParameters")
 	float subsFilterRq = 1.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="akM|SpeakersParameters")
+	TArray<float> satsGains = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="akM|SpeakersParameters")
+	TArray<float> subsGains = { 3.0f, 3.0f };
+	
 private:
 	// Child process handle and pipes for stdout/stderr
 	FProcHandle SpatServerProcessHandle;

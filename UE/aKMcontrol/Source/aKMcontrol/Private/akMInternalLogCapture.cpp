@@ -3,7 +3,7 @@
 
 FAkMInternalLogCapture::FAkMInternalLogCapture()
 {
-	Categories = { FName(TEXT("LogJackAudioLink")), FName(TEXT("LogSpatServer")) };
+	Categories = { FName(TEXT("LogJackAudioLink")), FName(TEXT("LogSpatServer")), FName(TEXT("LogAkMOSC")) };
 }
 
 FAkMInternalLogCapture::FAkMInternalLogCapture(const TSet<FName>& InCategories)

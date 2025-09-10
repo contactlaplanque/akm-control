@@ -1,6 +1,9 @@
 // ImGuiActor.cpp
 
 #include "ImGuiActor.h"
+
+#include <string>
+
 #include "Kismet/GameplayStatics.h"
 #include "ImGuiModule.h"
 #include "Engine/Engine.h"
@@ -90,6 +93,9 @@ void AImGuiActor::Tick(float DeltaTime)
 
 	ImGui::Text("akM Server General Params");
 	RenderGeneralServerParametersWindow();
+
+	ImGui::Text("akM Speaker Params");
+	RenderSpeakersParametersWindow();
     
     ImGui::End();
 
@@ -666,7 +672,7 @@ void AImGuiActor::RenderGeneralServerParametersWindow() const
 	ImGui::SetWindowFontScale(0.8f);
 	
 	ImVec2 AvailableSize = ImGui::GetContentRegionAvail();
-	ImGui::BeginChild("ServerGainAndReverb",ImVec2(AvailableSize.x * 0.5f - 10,400));
+	ImGui::BeginChild("ServerGainAndReverb",ImVec2(AvailableSize.x * 0.5f - 10,200 ));
 
 	ImGui::Text("Main Gain");
 	ImGui::SliderFloat("Gain", &SpatServerManager->systemGain, -90.0f, 30.0f, "%.1f dB");
@@ -678,33 +684,102 @@ void AImGuiActor::RenderGeneralServerParametersWindow() const
 
 	ImGui::Separator();
 	ImGui::Text("Main Reverb");
+	
 	ImGui::SliderFloat("Decay", &SpatServerManager->reverbDecay, 0.0f, 20.0f, "%.2f s");
+	if (ImGui::IsItemEdited())
+	{
+		const FString address = "/system/reverb";
+		const TArray<float> values = { SpatServerManager->reverbDecay, SpatServerManager->reverbFeedback };
+		SpatServerManager->SendOSCFloatArray(address,values);
+	};
+	
 	ImGui::SliderFloat("Feedback", &SpatServerManager->reverbFeedback, 0.0f, 1.0f, "%.2f");
+	if (ImGui::IsItemEdited())
+	{
+		const FString address = "/system/reverb";
+		const TArray<float> values = { SpatServerManager->reverbDecay, SpatServerManager->reverbFeedback };
+		SpatServerManager->SendOSCFloatArray(address,values);
+	};
 	ImGui::Separator();
 	
 	ImGui::EndChild();
 	ImGui::SameLine();
 
-	ImGui::BeginChild("ServerSatsAndSubsFilters",ImVec2(AvailableSize.x * 0.5f - 10,400));
-
+	ImGui::BeginChild("ServerSatsAndSubsFilters",ImVec2(AvailableSize.x * 0.5f - 10,200));
+	
 	ImGui::Text("Satellites Filter");
 	ImGui::PushID("SatsFilterFrequency");
 	ImGui::SliderFloat("Frequency", &SpatServerManager->satsFilterFrequency, 0.0f, 22000.0f, "%.1f Hz");
+	if (ImGui::IsItemEdited())
+	{
+		const FString address = "/system/filter/sats";
+		const TArray<float> values = { SpatServerManager->satsFilterFrequency, SpatServerManager->satsFilterRq };
+		SpatServerManager->SendOSCFloatArray(address,values);
+	};
 	ImGui::PopID();
+	
 	ImGui::PushID("SatsFilterRq");
 	ImGui::SliderFloat("Rq", &SpatServerManager->satsFilterRq, 0.0f, 10.0f, "%.2f");
+	if (ImGui::IsItemEdited())
+	{
+		const FString address = "/system/filter/sats";
+		const TArray<float> values = { SpatServerManager->satsFilterFrequency, SpatServerManager->satsFilterRq };
+		SpatServerManager->SendOSCFloatArray(address,values);
+	};
 	ImGui::PopID();
 
 	ImGui::Separator();
 	ImGui::Text("Subwoofers Filter");
 	ImGui::PushID("SubsFilterFrequency");
 	ImGui::SliderFloat("Frequency", &SpatServerManager->subsFilterFrequency, 0.0f, 22000.0f, "%.1f Hz");
+	if (ImGui::IsItemEdited())
+	{
+		const FString address = "/system/filter/subs";
+		const TArray<float> values = { SpatServerManager->subsFilterFrequency, SpatServerManager->subsFilterRq };
+		SpatServerManager->SendOSCFloatArray(address,values);
+	};
 	ImGui::PopID();
+	
 	ImGui::PushID("SubsFilterRq");
 	ImGui::SliderFloat("Rq", &SpatServerManager->subsFilterRq, 0.0f, 10.0f, "%.2f");
+	if (ImGui::IsItemEdited())
+	{
+		const FString address = "/system/filter/subs";
+		const TArray<float> values = { SpatServerManager->subsFilterFrequency, SpatServerManager->subsFilterRq };
+		SpatServerManager->SendOSCFloatArray(address,values);
+	};
 	ImGui::PopID();
 	
 	ImGui::Separator();
+	
+	ImGui::EndChild();
+
+	ImGui::SetWindowFontScale(1.0f);
+}
+
+void AImGuiActor::RenderSpeakersParametersWindow() const
+{
+	ImGui::SetWindowFontScale(0.8f);
+	
+	// Ensure we start on a new line after any previous SameLine() usage
+	ImGui::NewLine();
+
+	ImVec2 AvailableSize = ImGui::GetContentRegionAvail();
+	ImGui::BeginChild("SpeakersGain", ImVec2(AvailableSize.x, 0.0f));
+	ImGui::Text("Satellites Gain");
+
+	for (int i=0;i<12;i++)
+	{
+		ImGui::Text("SAT %d",i+1);
+		ImGui::PushID(i);
+		ImGui::SliderFloat("Gain", &SpatServerManager->satsGains[i], -90.0f, 30.0f, "%.1f dB");
+		if (ImGui::IsItemEdited())
+		{
+			const FString address = "/sat"+FString::FromInt(i+1)+"/gain";
+			SpatServerManager->SendOSCFloat(address,SpatServerManager->satsGains[i]);
+		};
+		ImGui::PopID();
+	}
 	
 	ImGui::EndChild();
 
