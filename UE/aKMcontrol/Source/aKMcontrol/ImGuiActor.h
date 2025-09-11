@@ -11,6 +11,8 @@
 
 #include "ImGuiActor.generated.h"
 
+class ASourcesManager;
+
 UCLASS()
 class AKMCONTROL_API AImGuiActor : public AActor
 {
@@ -25,6 +27,9 @@ public:
 
 	UPROPERTY(EditAnywhere, Category="Object References")
 	AakMControlAudioManager* AudioManager;
+
+	UPROPERTY(EditAnywhere, Category="Object References")
+	ASourcesManager* SourcesManager;
 
 protected:
 	// Called when the game starts or when spawned
@@ -55,6 +60,7 @@ public:
 private:
 
 	void RenderAkMServerWindow() const;
+	void RenderBottomBar(float DeltaTime) const;
 	void RenderAudioMonitoringWindow() const;
 	void RenderInternalLogsWindow() const;
 	void RenderGeneralServerParametersWindow() const;

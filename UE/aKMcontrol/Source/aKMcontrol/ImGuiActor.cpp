@@ -13,6 +13,7 @@
 #include "Misc/ScopeLock.h"
 #include "HAL/CriticalSection.h"
 #include "akMInternalLogCapture.h"
+#include "SourcesManager.h"
 
 // (duplicate internal logs capture removed; single definition lives at file top)
 
@@ -33,6 +34,17 @@ void AImGuiActor::BeginPlay()
 	
 	// Scale ImGui style by 2x (this should be done once)
 	// ImGui::GetStyle().ScaleAllSizes(2.0f);
+
+	// Auto-locate SourcesManager if not assigned
+	if (!SourcesManager)
+	{
+		TArray<AActor*> Found;
+		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASourcesManager::StaticClass(), Found);
+		if (Found.Num() > 0)
+		{
+			SourcesManager = Cast<ASourcesManager>(Found[0]);
+		}
+	}
 
 	// Bind UEJackAudioLink events to drive UI prompts
 	if (GEngine)
@@ -87,15 +99,83 @@ void AImGuiActor::Tick(float DeltaTime)
     ImGui::SetNextWindowSize(ImVec2(LeftPanelWidth, LeftPanelHeight));
     ImGui::Begin("Left Panel",&LeftPanelOpen,LeftPanelFlags);
 
-	ImGui::Text("akM Server Status");
-	// akM Server Window
-	RenderAkMServerWindow();
+	ImGuiTabBarFlags tab_bar_flags = ImGuiTabBarFlags_None;
+	if (ImGui::BeginTabBar("LeftTabs", tab_bar_flags))
+	{
+		if (ImGui::BeginTabItem("akM Server"))
+		{
+			ImGui::Text("akM Server Status");
+			// akM Server Window
+			RenderAkMServerWindow();
 
-	ImGui::Text("akM Server General Params");
-	RenderGeneralServerParametersWindow();
+			ImGui::Text("akM Server General Params");
+			RenderGeneralServerParametersWindow();
 
-	ImGui::Text("akM Speaker Params");
-	RenderSpeakersParametersWindow();
+			ImGui::Text("akM Speaker Params");
+			RenderSpeakersParametersWindow();
+			ImGui::EndTabItem();
+		}
+		if (ImGui::BeginTabItem("Sources"))
+		{
+			if (!SourcesManager)
+			{
+				ImGui::Text("SourcesManager not found in level.");
+				ImGui::EndTabItem();
+			}
+			else
+			{
+				ImGui::Text("Manage virtual audio sources");
+				ImGui::Separator();
+				ImGui::Text("NumSources: %d", SourcesManager->NumSources);
+				ImGui::SameLine();
+				if (ImGui::Button("Add Source"))
+				{
+					ASource* Activated = SourcesManager->ActivateNextInactiveSource();
+					if (!Activated)
+					{
+						UE_LOG(LogTemp, Warning, TEXT("No inactive sources available to activate."));
+					}
+				}
+				ImGui::SameLine();
+				const int32 ActiveCount = SourcesManager->GetNumActive();
+				ImGui::Text("Active: %d", ActiveCount);
+				ImGui::SameLine();
+				ImGui::Text("Inactive: %d", FMath::Max(0, SourcesManager->NumSources - ActiveCount));
+
+				ImGui::Separator();
+				// List active sources with collapsible headers
+				for (ASource* Src : SourcesManager->Sources)
+				{
+					if (!IsValid(Src) || !Src->Active) { continue; }
+					FString Header = FString::Printf(TEXT("Source %d"), Src->ID);
+					ImGui::PushID(Src->ID);
+					if (ImGui::CollapsingHeader(TCHAR_TO_UTF8(*Header)))
+					{
+						if (ImGui::Button("Delete"))
+						{
+							SourcesManager->DeactivateSourceByID(Src->ID);
+						}
+
+						// Editable fields
+						FVector Pos = Src->Position;
+						float pos[3] = { (float)Pos.X, (float)Pos.Y, (float)Pos.Z };
+						if (ImGui::InputFloat3("Position (cm)", pos, "%.1f"))
+						{
+							Src->SetPosition(FVector((double)pos[0], (double)pos[1], (double)pos[2]));
+						}
+						float Radius = Src->Radius;
+						if (ImGui::InputFloat("Radius (cm)", &Radius, 1.0f, 5.0f, "%.1f"))
+						{
+							Src->SetRadius(Radius);
+						}
+					}
+					ImGui::PopID();
+				}
+				ImGui::EndTabItem();
+			}
+		}
+		ImGui::EndTabBar();
+	}
     
     ImGui::End();
 
@@ -138,7 +218,71 @@ void AImGuiActor::Tick(float DeltaTime)
 
 	// BOTTOM BAR
 
+	RenderBottomBar(DeltaTime);
+	
+	ImGui::End();
+	ImGui::PopStyleColor();
+	ImGui::PopStyleVar(2);
+
+
+    // Scale ImGui font by 2x (apply every frame to ensure it takes effect)
+    // ImGui::GetIO().FontGlobalScale = 2.0f;
+
+	DrawNewClientPopup();
+
+	// After akM server is ready (scsynth wired to Unreal), run one-time scan for already connected clients
+	if (!bInitialClientScanDone && SpatServerManager && SpatServerManager->bAKMserverAudioOutputPortsConnected)
+	{
+		if (GEngine)
+		{
+			if (UUEJackAudioLinkSubsystem* Subsystem = GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>())
+			{
+				const FString UnrealClientName = Subsystem->GetJackClientName();
+				TArray<FString> Clients = Subsystem->GetConnectedClients();
+				for (const FString& Client : Clients)
+				{
+					if (Client.Equals(TEXT("scsynth"), ESearchCase::IgnoreCase)) { continue; }
+					if (!UnrealClientName.IsEmpty() && Client.Equals(UnrealClientName, ESearchCase::IgnoreCase)) { continue; }
+					TArray<FString> Inputs, Outputs;
+					Subsystem->GetClientPorts(Client, Inputs, Outputs);
+					if (Inputs.Num() > 0 || Outputs.Num() > 0)
+					{
+						OnNewJackClient(Client, Inputs.Num(), Outputs.Num());
+					}
+				}
+				bInitialClientScanDone = true;
+			}
+		}
+	}
+	
+	
+	
+	
+
+	// Disable ImGui input if mouse is over main view
+	if (ImGui::IsMousePosValid())
+	{
+		bool isMouseXinRange = MainViewLocalTopLeft.X <= ImGui::GetMousePos().x && ImGui::GetMousePos().x <= MainViewLocalTopLeft.X + MainViewLocalSize.X;
+		bool isMouseYinRange = MainViewLocalTopLeft.Y <= ImGui::GetMousePos().y && ImGui::GetMousePos().y <= MainViewLocalTopLeft.Y + MainViewLocalSize.Y;
+		if (isMouseXinRange || isMouseYinRange)
+		{
+			SetImGuiInput(false);
+		}
+	}
+	
+}
+
+
+void AImGuiActor::SetImGuiInput(bool NewState)
+{
+	//FImGuiModule::Get().GetProperties().ToggleInput();
+	FImGuiModule::Get().GetProperties().SetInputEnabled(NewState);
+}
+
+void AImGuiActor::RenderBottomBar(float DeltaTime) const
+{
 	bool BottomBarOpen = true;
+	FVector2D ViewportSize = FVector2D(GEngine->GameViewport->Viewport->GetSizeXY());
 
 	ImGuiWindowFlags BottomBarFlags = ImGuiWindowFlags_NoTitleBar 
 	                                | ImGuiWindowFlags_NoResize 
@@ -203,64 +347,9 @@ void AImGuiActor::Tick(float DeltaTime)
 	    ImGui::SetWindowFontScale(1.0f);
 	    ImGui::PopStyleVar(3);
 	}
-	ImGui::End();
-	ImGui::PopStyleColor();
-	ImGui::PopStyleVar(2);
-
-
-    // Scale ImGui font by 2x (apply every frame to ensure it takes effect)
-    // ImGui::GetIO().FontGlobalScale = 2.0f;
-
-	DrawNewClientPopup();
-
-	// After akM server is ready (scsynth wired to Unreal), run one-time scan for already connected clients
-	if (!bInitialClientScanDone && SpatServerManager && SpatServerManager->bAKMserverAudioOutputPortsConnected)
-	{
-		if (GEngine)
-		{
-			if (UUEJackAudioLinkSubsystem* Subsystem = GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>())
-			{
-				const FString UnrealClientName = Subsystem->GetJackClientName();
-				TArray<FString> Clients = Subsystem->GetConnectedClients();
-				for (const FString& Client : Clients)
-				{
-					if (Client.Equals(TEXT("scsynth"), ESearchCase::IgnoreCase)) { continue; }
-					if (!UnrealClientName.IsEmpty() && Client.Equals(UnrealClientName, ESearchCase::IgnoreCase)) { continue; }
-					TArray<FString> Inputs, Outputs;
-					Subsystem->GetClientPorts(Client, Inputs, Outputs);
-					if (Inputs.Num() > 0 || Outputs.Num() > 0)
-					{
-						OnNewJackClient(Client, Inputs.Num(), Outputs.Num());
-					}
-				}
-				bInitialClientScanDone = true;
-			}
-		}
-	}
-	
-	
-	
-	
-
-	// Disable ImGui input if mouse is over main view
-	if (ImGui::IsMousePosValid())
-	{
-		bool isMouseXinRange = MainViewLocalTopLeft.X <= ImGui::GetMousePos().x && ImGui::GetMousePos().x <= MainViewLocalTopLeft.X + MainViewLocalSize.X;
-		bool isMouseYinRange = MainViewLocalTopLeft.Y <= ImGui::GetMousePos().y && ImGui::GetMousePos().y <= MainViewLocalTopLeft.Y + MainViewLocalSize.Y;
-		if (isMouseXinRange || isMouseYinRange)
-		{
-			SetImGuiInput(false);
-		}
-	}
-	
 }
 
 
-void AImGuiActor::SetImGuiInput(bool NewState)
-{
-	//FImGuiModule::Get().GetProperties().ToggleInput();
-	FImGuiModule::Get().GetProperties().SetInputEnabled(NewState);
-}
 
 void AImGuiActor::RenderAkMServerWindow() const
 {
