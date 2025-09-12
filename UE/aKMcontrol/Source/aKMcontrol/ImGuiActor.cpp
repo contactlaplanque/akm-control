@@ -159,15 +159,35 @@ void AImGuiActor::Tick(float DeltaTime)
 						// Editable fields
 						FVector Pos = Src->Position;
 						float pos[3] = { (float)Pos.X, (float)Pos.Y, (float)Pos.Z };
-						if (ImGui::DragFloat3("Position (cm)", pos, 1.0f,0.0f,0.0f,"%.0f"))
+						if (ImGui::DragFloat3("Position (cm)", pos, 1.0f,-10000.0f,10000.0f,"%.0f"))
 						{
 							Src->SetPosition(FVector((double)pos[0], (double)pos[1], (double)pos[2]));
+
+							//Send OSC
+							const FString address = FString::Printf(TEXT("/source%d/params"), Src->ID);
+							const TArray<float> values = { float(Src->Position.X * 0.01f),
+															float(Src->Position.Y * 0.01f),
+															float(Src->Position.Z * 0.01f),
+															float(Src->Radius * 0.01f),
+															float(Src->A), Src->DelayMultiplier, Src->Reverb };
+							SpatServerManager->SendOSCFloatArray(address,values);
 						}
+						
 						float Radius = Src->Radius;
 						if (ImGui::DragFloat("Radius (cm)", &Radius, 1.0f, 0.0f,0.0f, "%.1f"))
 						{
 							Src->SetRadius(Radius);
+
+							//Send OSC
+							const FString address = FString::Printf(TEXT("/source%d/params"), Src->ID);
+							const TArray<float> values = { float(Src->Position.X * 0.01f),
+															float(Src->Position.Y * 0.01f),
+															float(Src->Position.Z * 0.01f),
+															float(Src->Radius * 0.01f),
+															float(Src->A), Src->DelayMultiplier, Src->Reverb };
+							SpatServerManager->SendOSCFloatArray(address,values);
 						}
+						
 						float color[3];
 						color[0] = Src->Color.R / 255.0f;
 						color[1] = Src->Color.G / 255.0f; 
@@ -180,7 +200,53 @@ void AImGuiActor::Tick(float DeltaTime)
 								uint8(color[2] * 255.0f)
 							));
 						}
+
+						int A = Src->A;
+						if (ImGui::SliderInt("A", &A, 1, 12, "%d"))
+						{
+							Src->SetA(A);
+
+							//Send OSC
+							const FString address = FString::Printf(TEXT("/source%d/params"), Src->ID);
+							const TArray<float> values = { float(Src->Position.X * 0.01f),
+															float(Src->Position.Y * 0.01f),
+															float(Src->Position.Z * 0.01f),
+															float(Src->Radius * 0.01f),
+															float(Src->A), Src->DelayMultiplier, Src->Reverb };
+							SpatServerManager->SendOSCFloatArray(address,values);
+						}
+
+						float DelayMultiplier = Src->DelayMultiplier;
+						if (ImGui::SliderFloat("Delay Multiplier", &DelayMultiplier, 0.0f, 20.0f, "%.1f"))
+						{
+							Src->SetDelayMultiplier(DelayMultiplier);
+
+							//Send OSC
+							const FString address = FString::Printf(TEXT("/source%d/params"), Src->ID);
+							const TArray<float> values = { float(Src->Position.X * 0.01f),
+															float(Src->Position.Y * 0.01f),
+															float(Src->Position.Z * 0.01f),
+															float(Src->Radius * 0.01f),
+															float(Src->A), Src->DelayMultiplier, Src->Reverb };
+							SpatServerManager->SendOSCFloatArray(address,values);
+						}
+
+						float Reverb = Src->Reverb;
+						if (ImGui::SliderFloat("Reverb", &Reverb, 0.0f, 1.0f, "%.1f"))
+						{
+							Src->SetReverb(Reverb);
+
+							//Send OSC
+							const FString address = FString::Printf(TEXT("/source%d/params"), Src->ID);
+							const TArray<float> values = { float(Src->Position.X * 0.01f),
+															float(Src->Position.Y * 0.01f),
+															float(Src->Position.Z * 0.01f),
+															float(Src->Radius * 0.01f),
+															float(Src->A), Src->DelayMultiplier, Src->Reverb };
+							SpatServerManager->SendOSCFloatArray(address,values);
+						}
 					}
+					
 					ImGui::PopID();
 				}
 				ImGui::EndTabItem();

@@ -12,6 +12,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/Actor.h"
+#include "Engine/EngineTypes.h"
+#include "Engine/CollisionProfile.h"
 
 // Sets default values
 ASource::ASource()
@@ -57,11 +59,14 @@ ASource::ASource()
 		SourceInnerMeshMaterial = SourceInnerMatAsset.Object;
 	}
 	
+	// Ensure visibility traces can hit this actor's meshes
+	SourceInnerMesh->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+
 	SourceOuterMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	SourceOuterMesh->SetGenerateOverlapEvents(false);
 	SourceOuterMesh->SetCastShadow(false);
 
-	SourceInnerMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	SourceInnerMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	SourceInnerMesh->SetGenerateOverlapEvents(false);
 	SourceInnerMesh->SetCastShadow(false);
 }
@@ -126,7 +131,7 @@ void ASource::SetActive(bool bInActive)
 {
 	Active = bInActive;
 	SetActorHiddenInGame(!Active);
-	SetActorEnableCollision(false);
+	SetActorEnableCollision(Active);
 	SetActorTickEnabled(Active);
 }
 
@@ -149,6 +154,32 @@ void ASource::SetColor(const FColor& InColor)
 	ApplyColorToMaterial();
 	SourceLabel->SetTextRenderColor(Color);
 }
+
+void ASource::SetGain(float InGain)
+{
+	Gain = InGain;
+}
+
+void ASource::SetA(int InA)
+{
+	A = InA;
+	
+}
+
+void ASource::SetDelayMultiplier(float InDelayMultiplier)
+{
+	DelayMultiplier = FMath::Clamp(InDelayMultiplier, 0.0f, 100.0f);
+	
+}
+
+void ASource::SetReverb(float InReverb)
+{
+	Reverb = FMath::Clamp(InReverb, 0.0f, 1.0f);
+	
+}
+
+
+
 
 void ASource::RefreshVisual()
 {

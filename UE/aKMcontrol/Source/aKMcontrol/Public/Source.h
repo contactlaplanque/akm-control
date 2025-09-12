@@ -34,6 +34,18 @@ public:
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="akM|SourceParameters")
 	FColor Color = FColor(0, 140, 250);
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="akM|SourceParameters")
+	float Gain = 0.0f;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="akM|SourceParameters")
+	int A = 3;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="akM|SourceParameters")
+	float DelayMultiplier = 2.0f;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="akM|SourceParameters")
+	float Reverb = 0.1f;
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="akM|Components")
 	UStaticMeshComponent* SourceOuterMesh;
@@ -41,7 +53,7 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="akM|Components")
 	UMaterialInterface* SourceOuterMeshMaterial;
 
-	UPROPERTY(Transient)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="akM|Components")
 	UMaterialInstanceDynamic* SourceOuterMID;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="akM|Components")
@@ -50,7 +62,7 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="akM|Components")
 	UMaterialInterface* SourceInnerMeshMaterial;
 
-	UPROPERTY(Transient)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="akM|Components")
 	UMaterialInstanceDynamic* SourceInnerMID;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="akM|Components")
@@ -58,10 +70,31 @@ public:
 
 	// Initialization and controls
 	void Initialize(int32 InID);
+
+	UFUNCTION(BlueprintCallable)
 	void SetActive(bool bInActive);
+
+	UFUNCTION(BlueprintCallable)
 	void SetPosition(const FVector& InPosition);
+
+	UFUNCTION(BlueprintCallable)
 	void SetRadius(float InRadius);
+
+	UFUNCTION(BlueprintCallable)
 	void SetColor(const FColor& InColor);
+
+	UFUNCTION(BlueprintCallable)
+	void SetGain(float InGain);
+
+	UFUNCTION(BlueprintCallable)
+	void SetA(int InA);
+
+	UFUNCTION(BlueprintCallable)
+	void SetDelayMultiplier(float InDelayMultiplier);
+
+	UFUNCTION(BlueprintCallable)
+	void SetReverb(float InReverb);
+
 
 protected:
 	// Called when the game starts or when spawned

@@ -11,9 +11,8 @@ public class aKMcontrol : ModuleRules
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "ImGui" });
 		// Add OSC for client/server support
 		PublicDependencyModuleNames.AddRange(new string[] { "OSC" });
-		// UI (ImGui is public as we expose its types in public headers)
-		//PrivateDependencyModuleNames.AddRange(new string[] { "ImGui" });
 		// JackAudioLink
 		PrivateDependencyModuleNames.AddRange(new string[] { "UEJackAudioLink" });
+		
 	}
 }
