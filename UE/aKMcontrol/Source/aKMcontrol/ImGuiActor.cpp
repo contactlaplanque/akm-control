@@ -159,14 +159,26 @@ void AImGuiActor::Tick(float DeltaTime)
 						// Editable fields
 						FVector Pos = Src->Position;
 						float pos[3] = { (float)Pos.X, (float)Pos.Y, (float)Pos.Z };
-						if (ImGui::InputFloat3("Position (cm)", pos, "%.1f"))
+						if (ImGui::DragFloat3("Position (cm)", pos, 1.0f,0.0f,0.0f,"%.0f"))
 						{
 							Src->SetPosition(FVector((double)pos[0], (double)pos[1], (double)pos[2]));
 						}
 						float Radius = Src->Radius;
-						if (ImGui::InputFloat("Radius (cm)", &Radius, 1.0f, 5.0f, "%.1f"))
+						if (ImGui::DragFloat("Radius (cm)", &Radius, 1.0f, 0.0f,0.0f, "%.1f"))
 						{
 							Src->SetRadius(Radius);
+						}
+						float color[3];
+						color[0] = Src->Color.R / 255.0f;
+						color[1] = Src->Color.G / 255.0f; 
+						color[2] = Src->Color.B / 255.0f;
+						if (ImGui::ColorEdit3("Color", color))
+						{
+							Src->SetColor(FColor(
+								uint8(color[0] * 255.0f),
+								uint8(color[1] * 255.0f),
+								uint8(color[2] * 255.0f)
+							));
 						}
 					}
 					ImGui::PopID();
