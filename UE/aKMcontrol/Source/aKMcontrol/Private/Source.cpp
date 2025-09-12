@@ -14,6 +14,7 @@
 #include "GameFramework/Actor.h"
 #include "Engine/EngineTypes.h"
 #include "Engine/CollisionProfile.h"
+#include "akMSpatServerManager.h"
 
 // Sets default values
 ASource::ASource()
@@ -127,6 +128,12 @@ void ASource::Initialize(int32 InID)
 	SourceLabel->SetTextRenderColor(Color);
 }
 
+void ASource::Initialize(int32 InID, AakMSpatServerManager* InSpatServerManager)
+{
+	SetSpatServerManager(InSpatServerManager);
+	Initialize(InID);
+}
+
 void ASource::SetActive(bool bInActive)
 {
 	Active = bInActive;
@@ -139,6 +146,7 @@ void ASource::SetPosition(const FVector& InPosition)
 {
 	Position = InPosition;
 	SetActorLocation(Position);
+	SendParamsToServer();
 }
 
 void ASource::SetRadius(float InRadius)
@@ -146,6 +154,7 @@ void ASource::SetRadius(float InRadius)
 	Radius = FMath::Max(1.0f, InRadius);
 	InnerMeshRadius = FMath::Min(10.0f,InRadius * 0.2f);
 	RefreshVisual();
+	SendParamsToServer();
 }
 
 void ASource::SetColor(const FColor& InColor)
@@ -163,19 +172,19 @@ void ASource::SetGain(float InGain)
 void ASource::SetA(int InA)
 {
 	A = InA;
-	
+	SendParamsToServer();
 }
 
 void ASource::SetDelayMultiplier(float InDelayMultiplier)
 {
 	DelayMultiplier = FMath::Clamp(InDelayMultiplier, 0.0f, 100.0f);
-	
+	SendParamsToServer();
 }
 
 void ASource::SetReverb(float InReverb)
 {
 	Reverb = FMath::Clamp(InReverb, 0.0f, 1.0f);
-	
+	SendParamsToServer();
 }
 
 
@@ -271,5 +280,24 @@ void ASource::UpdateTextFacing()
 
 	const FRotator NewRot = Forward.Rotation();
 	SourceLabel->SetWorldRotation(NewRot);
+}
+
+void ASource::SendParamsToServer() const
+{
+	if (!SpatServerManager || !Active)
+	{
+		return;
+	}
+	const FString address = FString::Printf(TEXT("/source%d/params"), ID);
+	const TArray<float> values = {
+		float(Position.X * 0.01f),
+		float(Position.Y * 0.01f),
+		float(Position.Z * 0.01f),
+		float(Radius * 0.01f),
+		float(A),
+		DelayMultiplier,
+		Reverb
+	};
+	SpatServerManager->SendOSCFloatArray(address, values);
 }
 

@@ -4,6 +4,7 @@
 #include "SourcesManager.h"
 #include "Engine/World.h"
 #include "UObject/ConstructorHelpers.h"
+#include "akMSpatServerManager.h"
 
 // Sets default values
 ASourcesManager::ASourcesManager()
@@ -50,7 +51,7 @@ void ASourcesManager::InitializeSources()
 		ASource* NewSource = World->SpawnActor<ASource>(SourceClass, FVector::ZeroVector, FRotator::ZeroRotator, Params);
 		if (NewSource)
 		{
-			NewSource->Initialize(Index + 1);
+			NewSource->Initialize(Index + 1, SpatServerManager);
 			NewSource->SetActive(false);
 			Sources.Add(NewSource);
 		}

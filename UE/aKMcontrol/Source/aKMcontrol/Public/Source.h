@@ -10,6 +10,7 @@ class UStaticMeshComponent;
 class UMaterialInstanceDynamic;
 class UTextRenderComponent;
 class USceneComponent;
+class AakMSpatServerManager;
 
 UCLASS()
 class AKMCONTROL_API ASource : public AActor
@@ -70,6 +71,7 @@ public:
 
 	// Initialization and controls
 	void Initialize(int32 InID);
+	void Initialize(int32 InID, AakMSpatServerManager* InSpatServerManager);
 
 	UFUNCTION(BlueprintCallable)
 	void SetActive(bool bInActive);
@@ -109,10 +111,17 @@ private:
 	void EnsureDynamicMaterial();
 	void ApplyColorToMaterial();
 	void UpdateTextFacing();
+	void SendParamsToServer() const;
+
+	void SetSpatServerManager(AakMSpatServerManager* InManager) { SpatServerManager = InManager; }
 
 	UPROPERTY(Transient)
 	USceneComponent* LabelFacingTargetComponent;
 
 	float InnerMeshRadius = 10.0f;
+
+	// Reference to akM Spat Server Manager (set by SourcesManager)
+	UPROPERTY()
+	AakMSpatServerManager* SpatServerManager = nullptr;
 
 };

@@ -163,6 +163,7 @@ void AImGuiActor::Tick(float DeltaTime)
 						{
 							Src->SetPosition(FVector((double)pos[0], (double)pos[1], (double)pos[2]));
 
+							/*
 							//Send OSC
 							const FString address = FString::Printf(TEXT("/source%d/params"), Src->ID);
 							const TArray<float> values = { float(Src->Position.X * 0.01f),
@@ -171,6 +172,7 @@ void AImGuiActor::Tick(float DeltaTime)
 															float(Src->Radius * 0.01f),
 															float(Src->A), Src->DelayMultiplier, Src->Reverb };
 							SpatServerManager->SendOSCFloatArray(address,values);
+							*/
 						}
 						
 						float Radius = Src->Radius;
@@ -178,6 +180,7 @@ void AImGuiActor::Tick(float DeltaTime)
 						{
 							Src->SetRadius(Radius);
 
+							/*
 							//Send OSC
 							const FString address = FString::Printf(TEXT("/source%d/params"), Src->ID);
 							const TArray<float> values = { float(Src->Position.X * 0.01f),
@@ -186,6 +189,7 @@ void AImGuiActor::Tick(float DeltaTime)
 															float(Src->Radius * 0.01f),
 															float(Src->A), Src->DelayMultiplier, Src->Reverb };
 							SpatServerManager->SendOSCFloatArray(address,values);
+							*/
 						}
 						
 						float color[3];
@@ -206,6 +210,7 @@ void AImGuiActor::Tick(float DeltaTime)
 						{
 							Src->SetA(A);
 
+							/*
 							//Send OSC
 							const FString address = FString::Printf(TEXT("/source%d/params"), Src->ID);
 							const TArray<float> values = { float(Src->Position.X * 0.01f),
@@ -214,6 +219,7 @@ void AImGuiActor::Tick(float DeltaTime)
 															float(Src->Radius * 0.01f),
 															float(Src->A), Src->DelayMultiplier, Src->Reverb };
 							SpatServerManager->SendOSCFloatArray(address,values);
+							*/
 						}
 
 						float DelayMultiplier = Src->DelayMultiplier;
@@ -221,6 +227,7 @@ void AImGuiActor::Tick(float DeltaTime)
 						{
 							Src->SetDelayMultiplier(DelayMultiplier);
 
+							/*
 							//Send OSC
 							const FString address = FString::Printf(TEXT("/source%d/params"), Src->ID);
 							const TArray<float> values = { float(Src->Position.X * 0.01f),
@@ -229,6 +236,7 @@ void AImGuiActor::Tick(float DeltaTime)
 															float(Src->Radius * 0.01f),
 															float(Src->A), Src->DelayMultiplier, Src->Reverb };
 							SpatServerManager->SendOSCFloatArray(address,values);
+							*/
 						}
 
 						float Reverb = Src->Reverb;
@@ -236,6 +244,7 @@ void AImGuiActor::Tick(float DeltaTime)
 						{
 							Src->SetReverb(Reverb);
 
+							/*
 							//Send OSC
 							const FString address = FString::Printf(TEXT("/source%d/params"), Src->ID);
 							const TArray<float> values = { float(Src->Position.X * 0.01f),
@@ -244,6 +253,7 @@ void AImGuiActor::Tick(float DeltaTime)
 															float(Src->Radius * 0.01f),
 															float(Src->A), Src->DelayMultiplier, Src->Reverb };
 							SpatServerManager->SendOSCFloatArray(address,values);
+							*/
 						}
 					}
 					

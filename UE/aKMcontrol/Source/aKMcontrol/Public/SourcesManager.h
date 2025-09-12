@@ -7,6 +7,8 @@
 #include "GameFramework/Actor.h"
 #include "SourcesManager.generated.h"
 
+class AakMSpatServerManager;
+
 
 UCLASS()
 class AKMCONTROL_API ASourcesManager : public AActor
@@ -25,6 +27,10 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="akM|SourcesParameters")
 	TSubclassOf<ASource> SourceClass;
+
+	// Reference to akM Spat Server Manager to propagate to sources
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Object References")
+	AakMSpatServerManager* SpatServerManager = nullptr;
 
 	// Initialization and lifecycle
 	void InitializeSources();
