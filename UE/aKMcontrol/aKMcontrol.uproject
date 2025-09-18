@@ -20,6 +20,13 @@
 			"TargetAllowList": [
 				"Editor"
 			]
+		},
+		{
+			"Name": "OSC",
+			"Enabled": true
 		}
+	],
+	"TargetPlatforms": [
+		"Windows"
 	]
 }

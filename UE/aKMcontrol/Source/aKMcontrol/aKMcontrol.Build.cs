@@ -8,27 +8,11 @@ public class aKMcontrol : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput" });
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "ImGui" });
+		// Add OSC for client/server support
+		PublicDependencyModuleNames.AddRange(new string[] { "OSC" });
+		// JackAudioLink
+		PrivateDependencyModuleNames.AddRange(new string[] { "UEJackAudioLink" });
 		
-		PrivateDependencyModuleNames.AddRange(new string[] { "ImGui" });
-
-		// Uncomment if you are using Slate UI
-		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
-		
-		// Uncomment if you are using online features
-		// PrivateDependencyModuleNames.Add("OnlineSubsystem");
-
-		// To include OnlineSubsystemSteam, add it to the plugins section in your uproject file with the Enabled attribute set to true
-
-		// Jack Audio Library Configuration
-		if (Target.Platform == UnrealTargetPlatform.Win64)
-		{
-			// Add Jack include directory
-			PublicIncludePaths.Add("C:/Program Files/JACK2/include");
-			
-			// Add Jack library directory
-			PublicAdditionalLibraries.Add("C:/Program Files/JACK2/lib/libjack64.lib");
-			
-		}
 	}
 }

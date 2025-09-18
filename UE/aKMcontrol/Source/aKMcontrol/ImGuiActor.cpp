@@ -1,11 +1,21 @@
 // ImGuiActor.cpp
 
 #include "ImGuiActor.h"
-#include "SourceActor.h"
+
+#include <string>
+
 #include "Kismet/GameplayStatics.h"
 #include "ImGuiModule.h"
 #include "Engine/Engine.h"
+#include "UEJackAudioLinkSubsystem.h"
 #include "GameFramework/PlayerController.h"
+#include "Misc/OutputDevice.h"
+#include "Misc/ScopeLock.h"
+#include "HAL/CriticalSection.h"
+#include "akMInternalLogCapture.h"
+#include "SourcesManager.h"
+
+// (duplicate internal logs capture removed; single definition lives at file top)
 
 AImGuiActor::AImGuiActor()
 {
@@ -15,413 +25,1037 @@ AImGuiActor::AImGuiActor()
 void AImGuiActor::BeginPlay()
 {
 	Super::BeginPlay();
-	
-	// Find the JackAudioInterface actor in the world once
-	JackInterface = FindJackAudioInterface();
+
+	MainViewLocalSize = FVector2D(0.0f, 0.0f);
+	MainViewLocalTopLeft = FVector2D(0.0f, 0.0f);
 	
 	// Ensure ImGui input is disabled by default so camera controls work
 	FImGuiModule::Get().GetProperties().SetInputEnabled(false);
 	
 	// Scale ImGui style by 2x (this should be done once)
-	ImGui::GetStyle().ScaleAllSizes(2.0f);
+	// ImGui::GetStyle().ScaleAllSizes(2.0f);
+
+	// Auto-locate SourcesManager if not assigned
+	if (!SourcesManager)
+	{
+		TArray<AActor*> Found;
+		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASourcesManager::StaticClass(), Found);
+		if (Found.Num() > 0)
+		{
+			SourcesManager = Cast<ASourcesManager>(Found[0]);
+		}
+	}
+
+	// Bind UEJackAudioLink events to drive UI prompts
+	if (GEngine)
+	{
+		if (UUEJackAudioLinkSubsystem* Subsystem = GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>())
+		{
+			Subsystem->OnNewJackClientConnected.AddDynamic(this, &AImGuiActor::OnNewJackClient);
+			Subsystem->OnJackClientDisconnected.AddDynamic(this, &AImGuiActor::OnJackClientDisconnected);
+			// Defer initial scan until akM server is ready (handled in Tick)
+		}
+	}
+
+	// Attach internal logs capture to UE log
+	if (!InternalLogCapture.IsValid())
+	{
+		InternalLogCapture = MakeUnique<FAkMInternalLogCapture>();
+		if (GLog)
+		{
+			GLog->AddOutputDevice(InternalLogCapture.Get());
+		}
+	}
+}
+
+void AImGuiActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (GLog && InternalLogCapture.IsValid())
+	{
+		GLog->RemoveOutputDevice(InternalLogCapture.Get());
+	}
+	InternalLogCapture.Reset();
+	Super::EndPlay(EndPlayReason);
 }
 
 void AImGuiActor::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
-
-	// --- Update Level Meter State ---
-	if (JackInterface)
-	{
-		const int32 NumChannels = JackInterface->GetNumRegisteredInputPorts();
-
-		// Ensure our state arrays are the correct size
-		if (SmoothedRmsLevels.Num() != NumChannels)
-		{
-			SmoothedRmsLevels.Init(0.0f, NumChannels);
-			PeakLevels.Init(0.0f, NumChannels);
-			TimesOfLastPeak.Init(0.0f, NumChannels);
-		}
-		
-		for (int32 i = 0; i < NumChannels; ++i)
-		{
-			// Get the raw RMS level for the current channel
-			const float RawRms = JackInterface->GetInputChannelLevel(i);
-
-			// Apply smoothing (exponential moving average)
-			const float SmoothingFactor = 0.6f;
-			SmoothedRmsLevels[i] = (RawRms * (1.0f - SmoothingFactor)) + (SmoothedRmsLevels[i] * SmoothingFactor);
-
-			// Update peak level
-			if (SmoothedRmsLevels[i] > PeakLevels[i])
-			{
-				PeakLevels[i] = SmoothedRmsLevels[i];
-				TimesOfLastPeak[i] = GetWorld()->GetTimeSeconds();
-			}
-
-			// Let peak level fall off after a short time
-			const float PeakHoldTime = 1.5f;
-			if (GetWorld()->GetTimeSeconds() - TimesOfLastPeak[i] > PeakHoldTime)
-			{
-				// Decay peak level smoothly
-				PeakLevels[i] = FMath::Max(0.0f, PeakLevels[i] - (DeltaTime * 0.5f));
-			}
-		}
-	}
-	// --- End Update ---
 	
-    // Scale ImGui font by 2x (apply every frame to ensure it takes effect)
-    ImGui::GetIO().FontGlobalScale = 2.0f;
+	FVector2D ViewportSize = FVector2D(GEngine->GameViewport->Viewport->GetSizeXY());
 
-    ImGui::Begin("Main Window");
+	ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 10.0f);
+	
+	// LEFT PANEL
 
-    // Show ImGui input capture status
-    bool bImGuiInputEnabled = FImGuiModule::Get().GetProperties().IsInputEnabled();
-    ImGui::TextColored(bImGuiInputEnabled ? ImVec4(1,1,0,1) : ImVec4(0.5f,0.5f,0.5f,1),
-        bImGuiInputEnabled ? "ImGui Input: ENABLED" : "ImGui Input: DISABLED");
-    ImGui::Separator();
+	bool LeftPanelOpen = true;
 
-    // FPS Monitor
-    static float FPS = 0.0f;
-    static float FrameTime = 0.0f;
-    static float FPSUpdateTimer = 0.0f;
-    
-    FPSUpdateTimer += DeltaTime;
-    if (FPSUpdateTimer >= 0.5f) // Update every 0.5 seconds
-    {
-        FPS = 1.0f / DeltaTime;
-        FrameTime = DeltaTime * 1000.0f; // Convert to milliseconds
-        FPSUpdateTimer = 0.0f;
-    }
-    
-    ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "FPS Monitor");
-    ImGui::Text("FPS: %.1f", FPS);
-    ImGui::Text("Frame Time: %.2f ms", FrameTime);
-    
-    ImGui::Separator();
+	float LeftPanelWidth = ViewportSize.X - MainViewAbsoluteSize.X - 1;
+	float LeftPanelHeight = ViewportSize.Y - BottomBarHeight;
 
-    // Render Jack Audio Interface section
-    RenderJackAudioSection();
-    
-    ImGui::Separator();
-    
-    // Render existing Actor Picking section
-    RenderActorPickingSection();
+	ImGuiWindowFlags LeftPanelFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse ;
+	
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(ImVec2(LeftPanelWidth, LeftPanelHeight));
+    ImGui::Begin("Left Panel",&LeftPanelOpen,LeftPanelFlags);
 
+	ImGuiTabBarFlags tab_bar_flags = ImGuiTabBarFlags_None;
+	if (ImGui::BeginTabBar("LeftTabs", tab_bar_flags))
+	{
+		if (ImGui::BeginTabItem("akM Server"))
+		{
+			ImGui::Text("akM Server Status");
+			// akM Server Window
+			RenderAkMServerWindow();
+
+			ImGui::Text("akM Server General Params");
+			RenderGeneralServerParametersWindow();
+
+			ImGui::Text("akM Speaker Params");
+			RenderSpeakersParametersWindow();
+			ImGui::EndTabItem();
+		}
+		if (ImGui::BeginTabItem("Sources"))
+		{
+			if (!SourcesManager)
+			{
+				ImGui::Text("SourcesManager not found in level.");
+				ImGui::EndTabItem();
+			}
+			else
+			{
+				ImGui::Text("Manage virtual audio sources");
+				ImGui::Separator();
+				ImGui::Text("NumSources: %d", SourcesManager->NumSources);
+				ImGui::SameLine();
+				if (ImGui::Button("Add Source"))
+				{
+					ASource* Activated = SourcesManager->ActivateNextInactiveSource();
+					if (!Activated)
+					{
+						UE_LOG(LogTemp, Warning, TEXT("No inactive sources available to activate."));
+					}
+				}
+				ImGui::SameLine();
+				const int32 ActiveCount = SourcesManager->GetNumActive();
+				ImGui::Text("Active: %d", ActiveCount);
+				ImGui::SameLine();
+				ImGui::Text("Inactive: %d", FMath::Max(0, SourcesManager->NumSources - ActiveCount));
+
+				ImGui::Separator();
+				// List active sources with collapsible headers
+				for (ASource* Src : SourcesManager->Sources)
+				{
+					if (!IsValid(Src) || !Src->Active) { continue; }
+					FString Header = FString::Printf(TEXT("Source %d"), Src->ID);
+					ImGui::PushID(Src->ID);
+					if (ImGui::CollapsingHeader(TCHAR_TO_UTF8(*Header)))
+					{
+						if (ImGui::Button("Delete"))
+						{
+							SourcesManager->DeactivateSourceByID(Src->ID);
+						}
+
+						// Editable fields
+						FVector Pos = Src->Position;
+						float pos[3] = { (float)Pos.X, (float)Pos.Y, (float)Pos.Z };
+						if (ImGui::DragFloat3("Position (cm)", pos, 1.0f,-10000.0f,10000.0f,"%.0f"))
+						{
+							Src->SetPosition(FVector((double)pos[0], (double)pos[1], (double)pos[2]));
+
+							/*
+							//Send OSC
+							const FString address = FString::Printf(TEXT("/source%d/params"), Src->ID);
+							const TArray<float> values = { float(Src->Position.X * 0.01f),
+															float(Src->Position.Y * 0.01f),
+															float(Src->Position.Z * 0.01f),
+															float(Src->Radius * 0.01f),
+															float(Src->A), Src->DelayMultiplier, Src->Reverb };
+							SpatServerManager->SendOSCFloatArray(address,values);
+							*/
+						}
+						
+						float Radius = Src->Radius;
+						if (ImGui::DragFloat("Radius (cm)", &Radius, 1.0f, 0.0f,0.0f, "%.1f"))
+						{
+							Src->SetRadius(Radius);
+
+							/*
+							//Send OSC
+							const FString address = FString::Printf(TEXT("/source%d/params"), Src->ID);
+							const TArray<float> values = { float(Src->Position.X * 0.01f),
+															float(Src->Position.Y * 0.01f),
+															float(Src->Position.Z * 0.01f),
+															float(Src->Radius * 0.01f),
+															float(Src->A), Src->DelayMultiplier, Src->Reverb };
+							SpatServerManager->SendOSCFloatArray(address,values);
+							*/
+						}
+						
+						float color[3];
+						color[0] = Src->Color.R / 255.0f;
+						color[1] = Src->Color.G / 255.0f; 
+						color[2] = Src->Color.B / 255.0f;
+						if (ImGui::ColorEdit3("Color", color))
+						{
+							Src->SetColor(FColor(
+								uint8(color[0] * 255.0f),
+								uint8(color[1] * 255.0f),
+								uint8(color[2] * 255.0f)
+							));
+						}
+
+						int A = Src->A;
+						if (ImGui::SliderInt("A", &A, 1, 12, "%d"))
+						{
+							Src->SetA(A);
+
+							/*
+							//Send OSC
+							const FString address = FString::Printf(TEXT("/source%d/params"), Src->ID);
+							const TArray<float> values = { float(Src->Position.X * 0.01f),
+															float(Src->Position.Y * 0.01f),
+															float(Src->Position.Z * 0.01f),
+															float(Src->Radius * 0.01f),
+															float(Src->A), Src->DelayMultiplier, Src->Reverb };
+							SpatServerManager->SendOSCFloatArray(address,values);
+							*/
+						}
+
+						float DelayMultiplier = Src->DelayMultiplier;
+						if (ImGui::SliderFloat("Delay Multiplier", &DelayMultiplier, 0.0f, 20.0f, "%.1f"))
+						{
+							Src->SetDelayMultiplier(DelayMultiplier);
+
+							/*
+							//Send OSC
+							const FString address = FString::Printf(TEXT("/source%d/params"), Src->ID);
+							const TArray<float> values = { float(Src->Position.X * 0.01f),
+															float(Src->Position.Y * 0.01f),
+															float(Src->Position.Z * 0.01f),
+															float(Src->Radius * 0.01f),
+															float(Src->A), Src->DelayMultiplier, Src->Reverb };
+							SpatServerManager->SendOSCFloatArray(address,values);
+							*/
+						}
+
+						float Reverb = Src->Reverb;
+						if (ImGui::SliderFloat("Reverb", &Reverb, 0.0f, 1.0f, "%.1f"))
+						{
+							Src->SetReverb(Reverb);
+
+							/*
+							//Send OSC
+							const FString address = FString::Printf(TEXT("/source%d/params"), Src->ID);
+							const TArray<float> values = { float(Src->Position.X * 0.01f),
+															float(Src->Position.Y * 0.01f),
+															float(Src->Position.Z * 0.01f),
+															float(Src->Radius * 0.01f),
+															float(Src->A), Src->DelayMultiplier, Src->Reverb };
+							SpatServerManager->SendOSCFloatArray(address,values);
+							*/
+						}
+					}
+					
+					ImGui::PopID();
+				}
+				ImGui::EndTabItem();
+			}
+		}
+		ImGui::EndTabBar();
+	}
+    
     ImGui::End();
 
-	// Render the level meter in its own window if the interface is active
-	if (JackInterface && JackInterface->IsConnectedToJack())
-	{
-		// Set a default position and size for the meter window so it doesn't overlap the main one
-		ImGui::SetNextWindowPos(ImVec2(600, 50), ImGuiCond_FirstUseEver);
-		ImGui::SetNextWindowSize(ImVec2(450, 550), ImGuiCond_FirstUseEver);
+	// BOTTOM PANEL
 
-		ImGui::Begin("Input Level Meter");
-		RenderLevelMeter();
-		ImGui::End();
+	bool BottomPanelOpen = true;
+
+	float BottomPanelHeight = ViewportSize.Y - MainViewAbsoluteSize.Y - 1 - BottomBarHeight;
+
+	ImGuiWindowFlags BottomPanelFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar ;
+
+	ImGui::SetNextWindowPos(ImVec2(LeftPanelWidth, MainViewAbsoluteSize.Y + 1));
+	ImGui::SetNextWindowSize(ImVec2( MainViewAbsoluteSize.X, BottomPanelHeight));
+	ImGui::Begin("Bottom Panel", &BottomPanelOpen, BottomPanelFlags);
+
+	ImVec2 AvailableSize = ImGui::GetContentRegionAvail();
+
+	ImGui::BeginGroup();
+	
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+	ImGui::BeginChild("LevelsMonitoringContainer", ImVec2(AvailableSize.x * 0.5f - 10, 0),ImGuiChildFlags_None,ImGuiWindowFlags_NoScrollbar);
+
+	ImGui::PopStyleVar();
+	ImGui::Text("Audio Levels Monitoring");
+	// Audio Monitoring Window
+	RenderAudioMonitoringWindow();
+
+	ImGui::EndChild();
+	ImGui::SameLine(0,10);
+
+	ImGui::BeginChild("InternalLogsContainer", ImVec2(AvailableSize.x * 0.5f - 10, 0),ImGuiChildFlags_None,ImGuiWindowFlags_NoScrollbar);
+	ImGui::Text("akM Control Internal Logs");
+	RenderInternalLogsWindow();
+	
+	ImGui::EndChild();
+
+	ImGui::EndGroup();
+	
+	ImGui::End();
+
+	// BOTTOM BAR
+
+	RenderBottomBar(DeltaTime);
+	
+	ImGui::End();
+	ImGui::PopStyleColor();
+	ImGui::PopStyleVar(2);
+
+
+    // Scale ImGui font by 2x (apply every frame to ensure it takes effect)
+    // ImGui::GetIO().FontGlobalScale = 2.0f;
+
+	DrawNewClientPopup();
+
+	// After akM server is ready (scsynth wired to Unreal), run one-time scan for already connected clients
+	if (!bInitialClientScanDone && SpatServerManager && SpatServerManager->bAKMserverAudioOutputPortsConnected)
+	{
+		if (GEngine)
+		{
+			if (UUEJackAudioLinkSubsystem* Subsystem = GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>())
+			{
+				const FString UnrealClientName = Subsystem->GetJackClientName();
+				TArray<FString> Clients = Subsystem->GetConnectedClients();
+				for (const FString& Client : Clients)
+				{
+					if (Client.Equals(TEXT("scsynth"), ESearchCase::IgnoreCase)) { continue; }
+					if (!UnrealClientName.IsEmpty() && Client.Equals(UnrealClientName, ESearchCase::IgnoreCase)) { continue; }
+					TArray<FString> Inputs, Outputs;
+					Subsystem->GetClientPorts(Client, Inputs, Outputs);
+					if (Inputs.Num() > 0 || Outputs.Num() > 0)
+					{
+						OnNewJackClient(Client, Inputs.Num(), Outputs.Num());
+					}
+				}
+				bInitialClientScanDone = true;
+			}
+		}
+	}
+	
+	
+	
+	
+
+	// Disable ImGui input if mouse is over main view
+	if (ImGui::IsMousePosValid())
+	{
+		bool isMouseXinRange = MainViewLocalTopLeft.X <= ImGui::GetMousePos().x && ImGui::GetMousePos().x <= MainViewLocalTopLeft.X + MainViewLocalSize.X;
+		bool isMouseYinRange = MainViewLocalTopLeft.Y <= ImGui::GetMousePos().y && ImGui::GetMousePos().y <= MainViewLocalTopLeft.Y + MainViewLocalSize.Y;
+		if (isMouseXinRange || isMouseYinRange)
+		{
+			SetImGuiInput(false);
+		}
+	}
+	
+}
+
+
+void AImGuiActor::SetImGuiInput(bool NewState)
+{
+	//FImGuiModule::Get().GetProperties().ToggleInput();
+	FImGuiModule::Get().GetProperties().SetInputEnabled(NewState);
+}
+
+void AImGuiActor::RenderBottomBar(float DeltaTime) const
+{
+	bool BottomBarOpen = true;
+	FVector2D ViewportSize = FVector2D(GEngine->GameViewport->Viewport->GetSizeXY());
+
+	ImGuiWindowFlags BottomBarFlags = ImGuiWindowFlags_NoTitleBar 
+	                                | ImGuiWindowFlags_NoResize 
+	                                | ImGuiWindowFlags_NoMove 
+	                                | ImGuiWindowFlags_NoCollapse;
+
+	ImGui::SetNextWindowPos(ImVec2(0, ViewportSize.Y - BottomBarHeight));
+	ImGui::SetNextWindowSize(ImVec2(ViewportSize.X, BottomBarHeight));
+
+	ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.3f, 0.3f, 0.3f, 0.85f));
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+	if (ImGui::Begin("Bottom Bar", &BottomBarOpen, BottomBarFlags))
+	{
+	    // FPS Monitor
+	    static float FPS = 0.0f;
+	    static float FrameTime = 0.0f;
+	    static float FPSUpdateTimer = 0.0f;
+
+	    FPSUpdateTimer += DeltaTime;
+	    if (FPSUpdateTimer >= 0.5f) // Update every 0.5 seconds
+	    {
+	        FPS = 1.0f / DeltaTime;
+	        FrameTime = DeltaTime * 1000.0f; // Convert to milliseconds
+	        FPSUpdateTimer = 0.0f;
+	    }
+
+	    // Style adjustments
+	    ImGuiTableFlags TableFlags = ImGuiTableFlags_BordersV | ImGuiTableFlags_SizingFixedFit;
+	    ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(8, 2));
+	    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(10, 0));
+	    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+	    ImGui::SetWindowFontScale(0.9f);
+
+	    ImGui::PushStyleColor(ImGuiCol_TableBorderStrong, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
+	    ImGui::PushStyleColor(ImGuiCol_TableBorderLight,  ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
+
+	    // Table
+	    if (ImGui::BeginTable("App_info", 4, TableFlags, ImGui::GetContentRegionAvail()))
+	    {
+	        ImGui::TableNextRow();
+
+	        ImGui::TableNextColumn();
+	        ImGui::Text("akM Control PROTO");
+
+	        ImGui::TableNextColumn();
+	        bool bImGuiInputEnabled = FImGuiModule::Get().GetProperties().IsInputEnabled();
+	        ImGui::TextColored(
+	            bImGuiInputEnabled ? ImVec4(1, 1, 0, 1) : ImVec4(0.5f, 0.5f, 0.5f, 1),
+	            bImGuiInputEnabled ? "ImGui Input: ENABLED" : "ImGui Input: DISABLED");
+
+	        ImGui::TableNextColumn();
+	        ImGui::Text("FPS: %.1f", FPS);
+
+	        ImGui::TableNextColumn();
+	        ImGui::Text("Frame Time: %.2f ms", FrameTime);
+
+	        ImGui::EndTable();
+	    }
+
+	    // Restore styles
+	    ImGui::PopStyleColor(2);
+	    ImGui::SetWindowFontScale(1.0f);
+	    ImGui::PopStyleVar(3);
 	}
 }
 
-void AImGuiActor::RenderJackAudioSection()
+
+
+void AImGuiActor::RenderAkMServerWindow() const
 {
-    ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Jack Audio Interface");
-    
-    if (!JackInterface)
-    {
-        ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "No JackAudioInterface found in scene");
-        return;
-    }
-    
-    // Connection Status
-    EJackConnectionStatus Status = JackInterface->GetJackConnectionStatus();
-    ImVec4 StatusColor;
-    const char* StatusText;
-    
-    switch (Status)
-    {
-    case EJackConnectionStatus::Connected:
-        StatusColor = ImVec4(0.0f, 1.0f, 0.0f, 1.0f);
-        StatusText = "CONNECTED";
-        break;
-    case EJackConnectionStatus::Connecting:
-        StatusColor = ImVec4(1.0f, 1.0f, 0.0f, 1.0f);
-        StatusText = "CONNECTING";
-        break;
-    case EJackConnectionStatus::Disconnected:
-        StatusColor = ImVec4(1.0f, 0.5f, 0.0f, 1.0f);
-        StatusText = "DISCONNECTED";
-        break;
-    case EJackConnectionStatus::Failed:
-        StatusColor = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
-        StatusText = "FAILED";
-        break;
-    default:
-        StatusColor = ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
-        StatusText = "UNKNOWN";
-        break;
-    }
-    
-    ImGui::Text("Status: ");
-    ImGui::SameLine();
-    ImGui::TextColored(StatusColor, "%s", StatusText);
-    
-    if (JackInterface->IsConnectedToJack())
-    {
-        // Client Information - get values safely
-        FString ClientName = JackInterface->GetJackClientName();
-        int32 SampleRate = JackInterface->GetJackSampleRate();
-        int32 BufferSize = JackInterface->GetJackBufferSize();
-        float CPUUsage = JackInterface->GetJackCPUUsage();
-        int32 NumInputs = JackInterface->GetNumRegisteredInputPorts();
-        int32 NumOutputs = JackInterface->GetNumRegisteredOutputPorts();
-        
-        // Only display if we got valid values (prevents displaying zeros when server is dead)
-        if (!ClientName.IsEmpty() && SampleRate > 0 && BufferSize > 0)
-        {
-            ImGui::Text("Client: %s", TCHAR_TO_UTF8(*ClientName));
-            ImGui::Text("Sample Rate: %d Hz", SampleRate);
-            ImGui::Text("Buffer Size: %d frames", BufferSize);
-            ImGui::Text("CPU Usage: %.2f%%", CPUUsage);
-            ImGui::Text("Ports: %d in, %d out", NumInputs, NumOutputs);
-        }
-        else
-        {
-            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Connection appears to be dead");
-        }
-        
-        // Connection info displayed above
-    }
-    else
-    {
-        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Not connected to Jack server");
-    }
+	if (SpatServerManager != nullptr)
+	{
+
+		ImGui::BeginChild("akM_Server",ImVec2(0,400),true,ImGuiChildFlags_Borders);
+
+		bool bServerAlive = SpatServerManager->bIsServerAlive;
+		bool bServerIsStarting = SpatServerManager->bServerIsStarting;
+		ImVec4 ServerStatusColor = bServerIsStarting ? ImVec4(1, 1, 0, 1) : bServerAlive ? ImVec4(0,1,0,1) : ImVec4(1, 0, 0, 1);
+		ImGui::AlignTextToFramePadding();
+		ImGui::TextColored(ServerStatusColor, bServerIsStarting ? "SERVER STARTING..." : bServerAlive ? "ONLINE" : "OFFLINE");
+
+		if (bServerIsStarting)
+			ImGui::BeginDisabled();
+
+		ImGui::SameLine();
+
+		if (bServerAlive) 
+		{
+			if (ImGui::Button("STOP"))
+			{
+				UFunction* StopServerBlueprintFunction = SpatServerManager->FindFunction(TEXT("StopSpatServer"));
+				if (StopServerBlueprintFunction != nullptr)
+				{
+					
+					SpatServerManager->ProcessEvent(StopServerBlueprintFunction, nullptr);
+					SpatServerManager->StopSpatServerProcess();
+				}
+				else
+				{
+					UE_LOG(LogTemp, Error, TEXT("StopServerBlueprintFunction not found."));
+				}
+			}
+		}
+		else
+		{
+			if (ImGui::Button("START")){
+			
+				SpatServerManager->StartSpatServer();
+			}
+		}
+		
+		if (bServerIsStarting)
+			ImGui::EndDisabled();
+
+		// Info row: JACK CPU load and scsynth port counts
+		{
+			float CpuLoad = -1.0f;
+			int32 NumScInputs = -1;
+			int32 NumScOutputs = -1;
+			if (GEngine)
+			{
+				if (UUEJackAudioLinkSubsystem* Subsystem = GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>())
+				{
+					CpuLoad = Subsystem->GetCpuLoad(); // 0..100
+					TArray<FString> ScIn, ScOut;
+					Subsystem->GetClientPorts(TEXT("scsynth"), ScIn, ScOut);
+					NumScInputs = ScIn.Num();
+					NumScOutputs = ScOut.Num();
+				}
+			}
+
+			if (CpuLoad >= 0.0f)
+			{
+				ImGui::Text("CPU: %.1f%%", CpuLoad);
+			}
+			else
+			{
+				ImGui::Text("CPU: N/A");
+			}
+			ImGui::SameLine();
+			if (NumScInputs >= 0 && NumScOutputs >= 0)
+			{
+				ImGui::Text("scsynth: %d in / %d out", NumScInputs, NumScOutputs);
+			}
+			else
+			{
+				ImGui::Text("scsynth: N/A");
+			}
+		}
+
+		ImGui::Separator();
+
+		// Scrollable child region
+		ImGui::SetWindowFontScale(0.7f);
+		ImGui::BeginChild("ConsoleRegion", ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
+
+		for (const FString& Line : SpatServerManager->ImGuiConsoleBuffer)
+		{
+			ImGui::TextUnformatted(TCHAR_TO_ANSI(*Line));
+		}
+
+		// Auto-scroll to bottom
+		if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
+			ImGui::SetScrollHereY(1.0f);
+		
+
+		ImGui::EndChild();
+		ImGui::SetWindowFontScale(1.0f);
+		
+		ImGui::EndChild();
+	}
+	else {
+		UE_LOG(LogTemp, Warning, TEXT("SpatServerManager not found, akM Server window not rendered"));
+	}
 }
 
-void AImGuiActor::RenderLevelMeter()
+void AImGuiActor::RenderAudioMonitoringWindow() const
 {
-	if (SmoothedRmsLevels.IsEmpty())
+	if (AudioManager == nullptr)
 	{
-		ImGui::Text("No input channels to display.");
+		UE_LOG(LogTemp, Warning, TEXT("AudioManager not found, Audio Monitoring window not rendered"));
 		return;
 	}
 
-	// --- Adaptive Layout ---
-	const int32 ChannelsPerGroup = 8;
-	const float MeterWidth = 12.0f;
-	const float MeterSpacing = 4.0f; // Spacing between individual meters for clarity
-	const float MeterHeight = 240.0f; // Increased height for better scale readability
-	const float ScaleWidth = 30.0f;
-	const float GroupSpacing = 20.0f; // Increased spacing between groups
-	// Account for the spacing between meters in the total group width
-	const float GroupWidth = ScaleWidth + (MeterWidth * ChannelsPerGroup) + (MeterSpacing * (ChannelsPerGroup - 1)) + GroupSpacing;
-
-	int numColumns = FMath::FloorToInt(ImGui::GetContentRegionAvail().x / GroupWidth);
-	numColumns = FMath::Max(1, numColumns);
-
-	for (int32 groupIdx = 0; groupIdx * ChannelsPerGroup < SmoothedRmsLevels.Num(); ++groupIdx)
+	if (SpatServerManager == nullptr)
 	{
-		ImGui::BeginGroup(); // Group the scale, meters, and label together
+		ImGui::Text("SpatServerManager not found; cannot determine connected input ports.");
+		return;
+	}
 
-		// --- Get base positions and draw list ---
-		const ImVec2 GroupCursorStart = ImGui::GetCursorScreenPos();
-		ImDrawList* DrawList = ImGui::GetWindowDrawList();
+	// Layout constants
+	const float MeterWidth = 14.0f;
+	const float MeterSpacing = 10.0f;
+	const float GroupPadding = 4.0f;
 
-		// --- 1. Draw the dB Scale on the left of the group ---
+	const ImVec2 avail = ImGui::GetContentRegionAvail();
+	const float sectionHeight = FMath::Max(0, avail.y * 0.5f);
+
+	// Helpers
+
+	auto DrawSingleMeter = [&](ImDrawList* DrawList, const ImVec2& topLeft, float meterHeight, float rms, float peak)
+	{
+		const float MinDB = -60.0f;
+		const float MaxDB = 6.0f;
+		const float RmsDB = 20.0f * FMath::LogX(10.0f, FMath::Max(rms, 1e-9f));
+		const float PeakDB = 20.0f * FMath::LogX(10.0f, FMath::Max(peak, 1e-9f));
+		const float NormalizedRms = (FMath::Clamp(RmsDB, MinDB, MaxDB) - MinDB) / (MaxDB - MinDB);
+		const float NormalizedPeak = (FMath::Clamp(PeakDB, MinDB, MaxDB) - MinDB) / (MaxDB - MinDB);
+
+		const ImVec2 BarStart = ImVec2(topLeft.x, topLeft.y + meterHeight);
+		// Background
+		DrawList->AddRectFilled(topLeft, ImVec2(topLeft.x + MeterWidth, topLeft.y + meterHeight), IM_COL32(30, 30, 30, 255), 2.0f);
+		// RMS
+		if (NormalizedRms > 0.0f)
 		{
-			const ImVec2 ScalePos = GroupCursorStart;
-			const float MinDB = -60.0f;
-			const float TickLevels[] = {6.0f, 0.0f, -6.0f, -12.0f, -24.0f, -48.0f};
-
-			for (float TickDB : TickLevels)
+			const ImU32 GreenColor = IM_COL32(0, 200, 0, 255);
+			const ImU32 YellowColor = IM_COL32(255, 255, 0, 255);
+			const ImU32 RedColor = IM_COL32(255, 0, 0, 255);
+			const float YellowT = 0.75f;
+			const float RedT = 0.90f;
+			float GreenHeight = FMath::Min(meterHeight * NormalizedRms, meterHeight * YellowT);
+			DrawList->AddRectFilled(ImVec2(BarStart.x, BarStart.y - GreenHeight), ImVec2(BarStart.x + MeterWidth, BarStart.y), GreenColor, 2.0f, ImDrawFlags_RoundCornersBottom);
+			if (NormalizedRms > YellowT)
 			{
-				float NormalizedTick = (FMath::Clamp(TickDB, -60.f, 6.f) - MinDB) / (6.f - MinDB);
-				float TickY = ScalePos.y + MeterHeight - (MeterHeight * NormalizedTick);
+				float YellowHeight = FMath::Min(meterHeight * NormalizedRms, meterHeight * RedT) - GreenHeight;
+				DrawList->AddRectFilled(ImVec2(BarStart.x, BarStart.y - GreenHeight - YellowHeight), ImVec2(BarStart.x + MeterWidth, BarStart.y - GreenHeight), YellowColor);
+			}
+			if (NormalizedRms > RedT)
+			{
+				float RedHeight = (meterHeight * NormalizedRms) - (meterHeight * RedT);
+				DrawList->AddRectFilled(ImVec2(BarStart.x, BarStart.y - (meterHeight * RedT) - RedHeight), ImVec2(BarStart.x + MeterWidth, BarStart.y - (meterHeight * RedT)), RedColor);
+			}
+		}
+		// Peak
+		if (NormalizedPeak > 0.0f)
+		{
+			const float PeakLineY = BarStart.y - (meterHeight * NormalizedPeak);
+			DrawList->AddLine(ImVec2(topLeft.x, PeakLineY), ImVec2(topLeft.x + MeterWidth, PeakLineY), IM_COL32(255, 255, 255, 180), 1.0f);
+		}
+	};
+
+	const bool bHaveScsynth = SpatServerManager->ConnectedUnrealInputIndicesFromScsynth.Num() > 0;
+	const bool bHaveSources = SpatServerManager->ConnectedUnrealInputIndicesByClient.Num() > 0;
+
+	if (!bHaveScsynth && !bHaveSources)
+	{
+		ImGui::BeginChild("EmptyMeters", ImVec2(0, sectionHeight), true);
+		ImGui::Text("No connected audio input ports on UE Jack Client");
+		ImGui::EndChild();
+		ImGui::BeginChild("EmptyMeters2", ImVec2(0, sectionHeight), true);
+		ImGui::EndChild();
+			return;
+		}
+
+	// SPEAKERS OUTPUT (scsynth)
+	if (bHaveScsynth)
+	{
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(5, 5));
+		ImGui::BeginChild("SpeakersOutputChild", ImVec2(0, sectionHeight), true, ImGuiWindowFlags_HorizontalScrollbar);
+		ImGui::SetWindowFontScale(0.7f);
+
+		const TArray<int32>& UnrealInputsFromSc = SpatServerManager->ConnectedUnrealInputIndicesFromScsynth;
+		const int32 totalPorts = UnrealInputsFromSc.Num();
+		const int32 numGroups = FMath::DivideAndRoundUp(totalPorts, 3);
+		const float meterHeight = 120.0f;
+
+		ImGui::Text("SPEAKERS OUTPUT");
+
+		ImGuiTableFlags TableFlags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_ScrollX;
+		const int32 tableCols = numGroups; //
+		if (ImGui::BeginTable("SpeakersTable", tableCols, TableFlags, ImVec2(0, 0)))
+		{
+			for (int32 g = 0; g < numGroups; ++g)
+			{
+				const int32 countInGroup = FMath::Min(3, totalPorts - g * 3);
+				const float groupWidth = countInGroup * MeterWidth + (countInGroup - 1) * MeterSpacing + GroupPadding * 2.0f;
+				FString ColName = FString::Printf(TEXT("G%d"), g + 1);
+				ImGui::TableSetupColumn(TCHAR_TO_UTF8(*ColName), ImGuiTableColumnFlags_WidthFixed, groupWidth);
+			}
+			ImGui::TableNextRow();
+			for (int32 g = 0; g < numGroups; ++g)
+			{
+				ImGui::TableNextColumn();
+				if (g == numGroups - 1) { ImGui::Text("SUBS"); }
+				else { ImGui::Text("COL. %1.d", g + 1); }
+			}
+
+			ImGui::TableNextRow();
+
+			ImDrawList* DrawList = ImGui::GetWindowDrawList();
+			for (int32 g = 0; g < numGroups; ++g)
+			{
+				ImGui::TableNextColumn();
+				const ImVec2 cellPos = ImGui::GetCursorScreenPos();
+				float x = cellPos.x + GroupPadding;
+				float y = cellPos.y;
+				const int32 start = g * 3;
+				const int32 count = FMath::Min(3, totalPorts - start);
 				
-				// Draw tick mark
-				DrawList->AddLine(ImVec2(ScalePos.x + ScaleWidth - 5, TickY), ImVec2(ScalePos.x + ScaleWidth, TickY), IM_COL32(180, 180, 180, 255));
-
-				// Draw text
-				FString TickLabel = FString::Printf(TEXT("%.0f"), TickDB);
-				ImVec2 TextSize = ImGui::CalcTextSize(TCHAR_TO_UTF8(*TickLabel));
-				DrawList->AddText(ImVec2(ScalePos.x + ScaleWidth - 7 - TextSize.x, TickY - TextSize.y / 2), IM_COL32(180, 180, 180, 255), TCHAR_TO_UTF8(*TickLabel));
-			}
-		}
-
-		// --- 2. Draw the block of 8 meters ---
-		ImGui::SetCursorScreenPos(ImVec2(GroupCursorStart.x + ScaleWidth, GroupCursorStart.y)); // Position cursor for meters
-		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(MeterSpacing, 0.0f));
-		for (int32 i = 0; i < ChannelsPerGroup; ++i)
-		{
-			int32 channelIdx = groupIdx * ChannelsPerGroup + i;
-			if (channelIdx >= SmoothedRmsLevels.Num()) break;
-
-			const float MinDB = -60.0f, MaxDB = 6.0f;
-			const float RmsDB = 20.0f * FMath::LogX(10.0f, FMath::Max(SmoothedRmsLevels[channelIdx], 1e-9f));
-			const float PeakDB = 20.0f * FMath::LogX(10.0f, FMath::Max(PeakLevels[channelIdx], 1e-9f));
-			const float NormalizedRms = (FMath::Clamp(RmsDB, MinDB, MaxDB) - MinDB) / (MaxDB - MinDB);
-			const float NormalizedPeak = (FMath::Clamp(PeakDB, MinDB, MaxDB) - MinDB) / (MaxDB - MinDB);
-			
-			const ImVec2 MeterSize(MeterWidth, MeterHeight);
-			const ImVec2 CursorPos = ImGui::GetCursorScreenPos();
-			const ImVec2 BarStart = ImVec2(CursorPos.x, CursorPos.y + MeterSize.y);
-
-			DrawList->AddRectFilled(CursorPos, ImVec2(CursorPos.x + MeterSize.x, CursorPos.y + MeterSize.y), IM_COL32(30, 30, 30, 255), 2.0f);
-			
-			if (NormalizedRms > 0) {
-				const ImU32 GreenColor=IM_COL32(0,200,0,255), YellowColor=IM_COL32(255,255,0,255), RedColor=IM_COL32(255,0,0,255);
-				const float YellowT=0.75f, RedT=0.90f;
-				float GreenHeight = FMath::Min(MeterSize.y * NormalizedRms, MeterSize.y * YellowT);
-				DrawList->AddRectFilled(ImVec2(BarStart.x, BarStart.y-GreenHeight), ImVec2(BarStart.x+MeterSize.x, BarStart.y), GreenColor, 2.0f, ImDrawFlags_RoundCornersBottom);
-				if(NormalizedRms > YellowT){
-					float YellowHeight = FMath::Min(MeterSize.y*NormalizedRms, MeterSize.y*RedT) - GreenHeight;
-					DrawList->AddRectFilled(ImVec2(BarStart.x, BarStart.y-GreenHeight-YellowHeight), ImVec2(BarStart.x+MeterSize.x, BarStart.y-GreenHeight), YellowColor);
+				for (int32 i = 0; i < count; ++i)
+				{
+					const int32 unrealIdx1 = UnrealInputsFromSc[start + i];
+					const int32 ch = unrealIdx1 - 1;
+					if (AudioManager->SmoothedRmsLevels.IsValidIndex(ch) && AudioManager->PeakLevels.IsValidIndex(ch))
+					{
+						DrawSingleMeter(DrawList, ImVec2(x, y), meterHeight, AudioManager->SmoothedRmsLevels[ch], AudioManager->PeakLevels[ch]);
+					}
+					x += MeterWidth + MeterSpacing;
 				}
-				if(NormalizedRms > RedT){
-					float RedHeight = (MeterSize.y*NormalizedRms) - (MeterSize.y*RedT);
-					DrawList->AddRectFilled(ImVec2(BarStart.x, BarStart.y-(MeterSize.y*RedT)-RedHeight), ImVec2(BarStart.x+MeterSize.x, BarStart.y-(MeterSize.y*RedT)), RedColor);
+				// Space for meters area
+				ImGui::Dummy(ImVec2(GroupPadding * 2.0f + count * MeterWidth + (count - 1) * MeterSpacing, meterHeight));
+			}
+			ImGui::TableNextRow();
+			for (int32 g = 0; g < numGroups; ++g)
+			{
+				ImGui::TableNextColumn();
+				const int32 start = g * 3;
+				const int32 count = FMath::Min(3, totalPorts - start);
+				
+				for (int32 i = 0; i < count; ++i)
+				{
+					const int32 unrealIdx1 = UnrealInputsFromSc[start + i];
+					const int32 ch = unrealIdx1;
+					ImGui::Text("%.2d",ch);ImGui::SameLine(0,4);
 				}
 			}
 
-			if (NormalizedPeak > 0) {
-				const float PeakLineY = BarStart.y - (MeterSize.y * NormalizedPeak);
-				DrawList->AddLine(ImVec2(CursorPos.x, PeakLineY), ImVec2(CursorPos.x + MeterSize.x, PeakLineY), IM_COL32(255, 255, 255, 180), 1.0f);
-			}
-
-			// The explicit divider line is no longer needed, as ItemSpacing handles it.
-
-			ImGui::Dummy(MeterSize);
-			ImGui::SameLine();
+			ImGui::EndTable();
 		}
+
+		ImGui::SetWindowFontScale(1.0f);
+		ImGui::EndChild();
 		ImGui::PopStyleVar();
-		
-		// --- 3. Draw the group label, properly centered under the meters ---
-		ImGui::SetCursorScreenPos(ImVec2(GroupCursorStart.x + ScaleWidth, GroupCursorStart.y + MeterHeight + 5));
-		const int32 StartChannel = groupIdx * ChannelsPerGroup + 1;
-		const int32 EndChannel = FMath::Min(StartChannel + ChannelsPerGroup - 1, SmoothedRmsLevels.Num());
-		const FString ChannelLabel = FString::Printf(TEXT("%d-%d"), StartChannel, EndChannel);
-		const ImVec2 TextSize = ImGui::CalcTextSize(TCHAR_TO_UTF8(*ChannelLabel));
-		ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ((MeterWidth * ChannelsPerGroup) - TextSize.x) * 0.5f);
-		ImGui::Text("%s", TCHAR_TO_UTF8(*ChannelLabel));
+	}
+	else
+	{
+		ImGui::BeginChild("SpeakersOutputChildEmpty", ImVec2(0, sectionHeight), true);
+		ImGui::EndChild();
+	}
 
-		ImGui::EndGroup(); // End the main group for scale, meters, and label
+	// SOURCES INPUT (external clients)
+	if (bHaveSources)
+	{
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(5, 5));
+		ImGui::BeginChild("SourcesInputChild", ImVec2(0, sectionHeight), true, ImGuiWindowFlags_HorizontalScrollbar);
+		ImGui::SetWindowFontScale(0.7f);
 
-		// --- Handle wrapping for the next group ---
-		if ((groupIdx + 1) % numColumns != 0)
+		// Prepare groups (max 4 meters per group) ordered by client name
+		TArray<FString> ClientNames;
+		SpatServerManager->ConnectedUnrealInputIndicesByClient.GetKeys(ClientNames);
+		ClientNames.Sort();
+
+		struct FGroup { FString Name; TArray<int32> Indices; TArray<int32> Labels; };
+		TArray<FGroup> Groups; Groups.Reserve(16);
+		for (const FString& Client : ClientNames)
 		{
-			ImGui::SameLine(0, GroupSpacing);
+			const TArray<int32>* UnrealInputsPtr = SpatServerManager->ConnectedUnrealInputIndicesByClient.Find(Client);
+			if (!UnrealInputsPtr) { continue; }
+			const TArray<int32>& UnrealInputs = *UnrealInputsPtr;
+			for (int32 start = 0; start < UnrealInputs.Num(); start += 4)
+			{
+				FGroup G;
+				const int32 count = FMath::Min(4, UnrealInputs.Num() - start);
+				G.Indices.Reserve(count);
+				G.Labels.Reserve(count);
+
+				for (int32 i = 0; i < count; ++i)
+				{
+					G.Indices.Add(UnrealInputs[start + i]);
+					G.Labels.Add(start + i + 1);
+				}
+				G.Name = FString::Printf(TEXT("%s"), *Client);
+				Groups.Add(MoveTemp(G));
+			}
+		}
+		
+		const float meterHeight = 120.0f;
+
+		ImGui::Text("AUDIO SOURCES INPUTS");
+
+		ImGuiTableFlags TableFlags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_ScrollX;
+		const int32 tableCols = 1 + Groups.Num();
+		if (ImGui::BeginTable("SourcesTable", tableCols, TableFlags, ImVec2(0, 0)))
+		{
+			for (int32 g = 0; g < Groups.Num(); ++g)
+			{
+				const int32 count = Groups[g].Indices.Num();
+				const float groupWidth = count * MeterWidth + (count - 1) * MeterSpacing + GroupPadding * 2.0f;
+				FString ColName = FString::Printf(TEXT("C%d"), g + 1);
+				ImGui::TableSetupColumn(TCHAR_TO_UTF8(*ColName), ImGuiTableColumnFlags_WidthFixed, groupWidth);
+			}
+			ImGui::TableNextRow();
+			for (int32 g = 0; g < Groups.Num(); ++g)
+			{
+				ImGui::TableNextColumn();
+				ImGui::Text(TCHAR_TO_UTF8(*Groups[g].Name));
+			}
+			ImGui::TableNextRow();
+
+			ImDrawList* DrawList = ImGui::GetWindowDrawList();
+			for (int32 g = 0; g < Groups.Num(); ++g)
+			{
+				ImGui::TableNextColumn();
+				const ImVec2 cellPos = ImGui::GetCursorScreenPos();
+				float x = cellPos.x + GroupPadding;
+				float y = cellPos.y;
+				const TArray<int32>& Indices = Groups[g].Indices;
+				for (int32 i = 0; i < Indices.Num(); ++i)
+				{
+					const int32 ch = Indices[i] - 1;
+					if (AudioManager->SmoothedRmsLevels.IsValidIndex(ch) && AudioManager->PeakLevels.IsValidIndex(ch))
+					{
+						DrawSingleMeter(DrawList, ImVec2(x, y), meterHeight, AudioManager->SmoothedRmsLevels[ch], AudioManager->PeakLevels[ch]);
+					}
+					x += MeterWidth + MeterSpacing;
+				}
+				// Space for meters
+				ImGui::Dummy(ImVec2(GroupPadding * 2.0f + Indices.Num() * MeterWidth + (Indices.Num() - 1) * MeterSpacing, meterHeight));
+			}
+			
+			ImGui::TableNextRow();
+			
+			for (int32 g = 0; g < Groups.Num(); ++g)
+			{
+				ImGui::TableNextColumn();
+				const TArray<int32>& Labels = Groups[g].Labels;
+				for (int32 i = 0; i < Labels.Num(); ++i)
+				{
+					const int32 ch = Labels[i];
+					ImGui::Text("%.2d",ch);ImGui::SameLine(0,4);
+				}
+			}
+
+			ImGui::EndTable();
+		}
+
+		ImGui::SetWindowFontScale(1.0f);
+		ImGui::EndChild();
+		ImGui::PopStyleVar();
+	}
+	else
+	{
+		ImGui::BeginChild("SourcesInputChildEmpty", ImVec2(0, sectionHeight), true);
+		ImGui::EndChild();
+	}
+}
+
+void AImGuiActor::RenderInternalLogsWindow() const
+{
+    if (ImGui::BeginChild("akM Control Internal Logs",	ImVec2(0,0)))
+    {
+        // Snapshot lines under lock
+        TArray<FString> Copy;
+        if (InternalLogCapture.IsValid())
+        {
+            InternalLogCapture->GetSnapshot(Copy);
+        }
+
+    	ImGui::SetWindowFontScale(0.7f);
+        ImGui::BeginChild("InternalLogRegion", ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
+        for (const FString& Line : Copy)
+        {
+            ImGui::TextUnformatted(TCHAR_TO_ANSI(*Line));
+        }
+        if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
+            ImGui::SetScrollHereY(1.0f);
+        ImGui::EndChild();
+    	ImGui::SetWindowFontScale(1.0f);
+    }
+    ImGui::EndChild();
+}
+
+void AImGuiActor::RenderGeneralServerParametersWindow() const
+{
+
+	ImGui::SetWindowFontScale(0.8f);
+	
+	ImVec2 AvailableSize = ImGui::GetContentRegionAvail();
+	ImGui::BeginChild("ServerGainAndReverb",ImVec2(AvailableSize.x * 0.5f - 10,200 ));
+
+	ImGui::Text("Main Gain");
+	ImGui::SliderFloat("Gain", &SpatServerManager->systemGain, -90.0f, 30.0f, "%.1f dB");
+	if (ImGui::IsItemEdited())
+	{
+		const FString address = "/system/gain";
+		SpatServerManager->SendOSCFloat(address,SpatServerManager->systemGain);
+	};
+
+	ImGui::Separator();
+	ImGui::Text("Main Reverb");
+	
+	ImGui::SliderFloat("Decay", &SpatServerManager->reverbDecay, 0.0f, 20.0f, "%.2f s");
+	if (ImGui::IsItemEdited())
+	{
+		const FString address = "/system/reverb";
+		const TArray<float> values = { SpatServerManager->reverbDecay, SpatServerManager->reverbFeedback };
+		SpatServerManager->SendOSCFloatArray(address,values);
+	};
+	
+	ImGui::SliderFloat("Feedback", &SpatServerManager->reverbFeedback, 0.0f, 1.0f, "%.2f");
+	if (ImGui::IsItemEdited())
+	{
+		const FString address = "/system/reverb";
+		const TArray<float> values = { SpatServerManager->reverbDecay, SpatServerManager->reverbFeedback };
+		SpatServerManager->SendOSCFloatArray(address,values);
+	};
+	ImGui::Separator();
+	
+	ImGui::EndChild();
+	ImGui::SameLine();
+
+	ImGui::BeginChild("ServerSatsAndSubsFilters",ImVec2(AvailableSize.x * 0.5f - 10,200));
+	
+	ImGui::Text("Satellites Filter");
+	ImGui::PushID("SatsFilterFrequency");
+	ImGui::SliderFloat("Frequency", &SpatServerManager->satsFilterFrequency, 0.0f, 22000.0f, "%.1f Hz");
+	if (ImGui::IsItemEdited())
+	{
+		const FString address = "/system/filter/sats";
+		const TArray<float> values = { SpatServerManager->satsFilterFrequency, SpatServerManager->satsFilterRq };
+		SpatServerManager->SendOSCFloatArray(address,values);
+	};
+	ImGui::PopID();
+	
+	ImGui::PushID("SatsFilterRq");
+	ImGui::SliderFloat("Rq", &SpatServerManager->satsFilterRq, 0.0f, 10.0f, "%.2f");
+	if (ImGui::IsItemEdited())
+	{
+		const FString address = "/system/filter/sats";
+		const TArray<float> values = { SpatServerManager->satsFilterFrequency, SpatServerManager->satsFilterRq };
+		SpatServerManager->SendOSCFloatArray(address,values);
+	};
+	ImGui::PopID();
+
+	ImGui::Separator();
+	ImGui::Text("Subwoofers Filter");
+	ImGui::PushID("SubsFilterFrequency");
+	ImGui::SliderFloat("Frequency", &SpatServerManager->subsFilterFrequency, 0.0f, 22000.0f, "%.1f Hz");
+	if (ImGui::IsItemEdited())
+	{
+		const FString address = "/system/filter/subs";
+		const TArray<float> values = { SpatServerManager->subsFilterFrequency, SpatServerManager->subsFilterRq };
+		SpatServerManager->SendOSCFloatArray(address,values);
+	};
+	ImGui::PopID();
+	
+	ImGui::PushID("SubsFilterRq");
+	ImGui::SliderFloat("Rq", &SpatServerManager->subsFilterRq, 0.0f, 10.0f, "%.2f");
+	if (ImGui::IsItemEdited())
+	{
+		const FString address = "/system/filter/subs";
+		const TArray<float> values = { SpatServerManager->subsFilterFrequency, SpatServerManager->subsFilterRq };
+		SpatServerManager->SendOSCFloatArray(address,values);
+	};
+	ImGui::PopID();
+	
+	ImGui::Separator();
+	
+	ImGui::EndChild();
+
+	ImGui::SetWindowFontScale(1.0f);
+}
+
+void AImGuiActor::RenderSpeakersParametersWindow() const
+{
+	ImGui::SetWindowFontScale(0.8f);
+	
+	// Ensure we start on a new line after any previous SameLine() usage
+	ImGui::NewLine();
+
+	ImVec2 AvailableSize = ImGui::GetContentRegionAvail();
+	ImGui::BeginChild("SpeakersGain", ImVec2(AvailableSize.x, 0.0f));
+	ImGui::Text("Satellites Gain");
+
+	for (int i=0;i<12;i++)
+	{
+		ImGui::Text("SAT %d",i+1);
+		ImGui::PushID(i);
+		ImGui::SliderFloat("Gain", &SpatServerManager->satsGains[i], -90.0f, 30.0f, "%.1f dB");
+		if (ImGui::IsItemEdited())
+		{
+			const FString address = "/sat"+FString::FromInt(i+1)+"/gain";
+			SpatServerManager->SendOSCFloat(address,SpatServerManager->satsGains[i]);
+		};
+		ImGui::PopID();
+	}
+	
+	ImGui::EndChild();
+
+	ImGui::SetWindowFontScale(1.0f);
+}
+
+
+void AImGuiActor::OnNewJackClient(const FString& ClientName, int32 NumInputs, int32 NumOutputs)
+{
+	// Ignore scsynth (handled by manager) and our own Unreal client
+	if (ClientName.Equals(TEXT("scsynth"), ESearchCase::IgnoreCase))
+	{
+		return;
+	}
+	// Ignore JACK system device
+	if (ClientName.Equals(TEXT("system"), ESearchCase::IgnoreCase))
+	{
+		return;
+	}
+	UUEJackAudioLinkSubsystem* Subsystem = (GEngine ? GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>() : nullptr);
+	if (Subsystem)
+	{
+		const FString UnrealClient = Subsystem->GetJackClientName();
+		if (!UnrealClient.IsEmpty() && ClientName.Equals(UnrealClient, ESearchCase::IgnoreCase))
+		{
+			return;
+		}
+	}
+
+	FPendingClientPrompt P; P.ClientName = ClientName; P.NumInputs = NumInputs; P.NumOutputs = NumOutputs;
+	PendingClientPrompts.Add(MoveTemp(P));
+	bImGuiOpenNextPopup = true;
+}
+
+void AImGuiActor::OnJackClientDisconnected(const FString& ClientName)
+{
+	// Remove pending prompt for this client if present
+	for (int32 i = PendingClientPrompts.Num() - 1; i >= 0; --i)
+	{
+		if (PendingClientPrompts[i].ClientName.Equals(ClientName, ESearchCase::IgnoreCase))
+		{
+			PendingClientPrompts.RemoveAt(i);
 		}
 	}
 }
 
-void AImGuiActor::RenderActorPickingSection()
+void AImGuiActor::DrawNewClientPopup()
 {
-    ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "Actor Picking");
+	if (PendingClientPrompts.Num() == 0)
+	{
+		return;
+	}
+	if (bImGuiOpenNextPopup)
+	{
+		ImGui::OpenPopup("NewJackClientPopup");
+		bImGuiOpenNextPopup = false;
+	}
+	
+	if (ImGui::BeginPopupModal("NewJackClientPopup", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+	{
+		const FPendingClientPrompt& Prompt = PendingClientPrompts[0];
+		ImGui::Text("New client connected on Jack server: %s - %d inputs, %d outputs", TCHAR_TO_ANSI(*Prompt.ClientName), Prompt.NumInputs, Prompt.NumOutputs);
+		ImGui::Separator();
+		ImGui::TextWrapped("Would you like to consider this as an audio input for sources in akM server and connect the outputs of this client to akM server?");
 
-    if (ImGui::Button("Toggle ImGui Input"))
-    {
-        ToggleImGuiInput();
-    }
+		bool bDoConnect = false;
+		if (ImGui::Button("Yes", ImVec2(120, 0)))
+		{
+			bDoConnect = true;
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Cancel", ImVec2(120, 0)))
+		{
+			PendingClientPrompts.RemoveAt(0);
+			if (PendingClientPrompts.Num() > 0)
+			{
+				bImGuiOpenNextPopup = true;
+			}
+			ImGui::CloseCurrentPopup();
+			ImGui::EndPopup();
+			return;
+		}
 
-    // Actor Picking
-    const char* ButtonTitle = bIsPickingActor ? "Stop Picking" : "Start Picking";
-    if (ImGui::Button(ButtonTitle))
-    {
-        bIsPickingActor = !bIsPickingActor;
-    }
+		if (bDoConnect)
+		{
+			// Ask the manager to perform actual connects and validation
+			if (SpatServerManager)
+			{
+				SpatServerManager->AcceptExternalClient(Prompt.ClientName, Prompt.NumInputs, Prompt.NumOutputs);
+			}
+			PendingClientPrompts.RemoveAt(0);
+			if (PendingClientPrompts.Num() > 0)
+			{
+				bImGuiOpenNextPopup = true;
+			}
+			ImGui::CloseCurrentPopup();
+		}
 
-    UWorld* World = GEngine->GetWorldFromContextObject(this, EGetWorldErrorMode::LogAndReturnNull);
-    ULocalPlayer* LP = World ? World->GetFirstLocalPlayerFromController() : nullptr;
-    if (bIsPickingActor)
-    {
-        if (LP && LP->ViewportClient)
-        {
-            // Get the projection data from world to viewport
-            FSceneViewProjectionData ProjectionData;
-            if (LP->GetProjectionData(LP->ViewportClient->Viewport, ProjectionData))
-            {
-                ImVec2 ScreenPosImGui = ImGui::GetMousePos();
-                FVector2D ScreenPos = { ScreenPosImGui.x, ScreenPosImGui.y };
-
-                FMatrix const InvViewProjectionMatrix = ProjectionData.ComputeViewProjectionMatrix().InverseFast();
-
-                FVector WorldPosition, WorldDirection;
-                FSceneView::DeprojectScreenToWorld(ScreenPos, ProjectionData.GetConstrainedViewRect(), InvViewProjectionMatrix, WorldPosition, WorldDirection);
-
-                FCollisionQueryParams Params("DevGuiActorPickerTrace", SCENE_QUERY_STAT_ONLY(UDevGuiSubsystem), true);
-
-                FCollisionObjectQueryParams ObjectParams(
-                    ECC_TO_BITFIELD(ECC_WorldStatic)
-                    | ECC_TO_BITFIELD(ECC_WorldDynamic)
-                    | ECC_TO_BITFIELD(ECC_Pawn)
-                    | ECC_TO_BITFIELD(ECC_PhysicsBody)
-                );
-
-                FHitResult OutHit;
-                if (World->LineTraceSingleByObjectType(
-                    OutHit,
-                    WorldPosition + WorldDirection * 100.0,
-                    WorldPosition + WorldDirection * 10000.0,
-                    ObjectParams,
-                    Params))
-                {
-                    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !ImGui::GetIO().WantCaptureMouse)
-                    {
-                        PickedActor = OutHit.GetActor()->GetClass()->GetName() == "BP_Source_C" ? OutHit.GetActor() : nullptr;
-                        bIsPickingActor = false;
-                    }
-                }
-                else
-                {
-                    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !ImGui::GetIO().WantCaptureMouse)
-                    {
-                        PickedActor = nullptr;
-                        bIsPickingActor = false;
-                    }
-                }
-            }
-        }
-
-        // Exiting Actor Picking mode if we click the right button !
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Right))
-        {
-            bIsPickingActor = false;
-        }
-    }
-
-    if (AActor* Actor = PickedActor.Get())
-    {
-        if (ASourceActor* SourceActor = Cast<ASourceActor>(Actor))
-        {
-            ImGui::Text("Picked source:");
-            ImGui::SameLine(); 
-            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), " %ls", *SourceActor->GetName());
-        }
-    }
-}
-
-void AImGuiActor::ToggleImGuiInput()
-{
-	FImGuiModule::Get().GetProperties().ToggleInput();
-}
-
-AJackAudioInterface* AImGuiActor::FindJackAudioInterface()
-{
-    UWorld* World = GetWorld();
-    if (!World)
-    {
-        return nullptr;
-    }
-    
-    // Find the first JackAudioInterface in the scene
-    TArray<AActor*> FoundActors;
-    UGameplayStatics::GetAllActorsOfClass(World, AJackAudioInterface::StaticClass(), FoundActors);
-    
-    if (FoundActors.Num() > 0)
-    {
-        return Cast<AJackAudioInterface>(FoundActors[0]);
-    }
-    
-    return nullptr;
+		ImGui::EndPopup();
+	}
 }
 
