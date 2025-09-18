@@ -25,7 +25,7 @@ Pre-release prototype.
 
 aKMControl is the Unreal Engine front‑end for the aKM spatial audio system. It orchestrates boot, runtime control, and shutdown of the SuperCollider‑based aKMServer, provides a real‑time UI (ImGui‑based) to manipulate spatialization parameters, and manages JACK audio routing via the built‑in UEJackAudioLink plugin. Primary communication with the server is via OSC.
 
-aKMControl is build with the **Unreal Engine 5.6**
+aKMControl is built with the **Unreal Engine 5.6**
 
 > [!CAUTION]
 > Currently, **the only supported platform is Windows (x64).** macOS and Linux support will follow soon.
