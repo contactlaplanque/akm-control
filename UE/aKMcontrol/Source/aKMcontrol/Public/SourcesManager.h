@@ -9,6 +9,9 @@
 
 class AakMSpatServerManager;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnResetSourcesDemo);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSourcesDemo1);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSourcesDemo2);
 
 UCLASS()
 class AKMCONTROL_API ASourcesManager : public AActor
@@ -32,17 +35,37 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Object References")
 	AakMSpatServerManager* SpatServerManager = nullptr;
 
+	UPROPERTY(BlueprintAssignable, Category="akM|Events")
+	FOnResetSourcesDemo OnResetSourcesDemo;
+
+	UPROPERTY(BlueprintAssignable, Category="akM|Events")
+	FOnSourcesDemo1 OnSourcesDemo1;
+
+	UPROPERTY(BlueprintAssignable, Category="akM|Events")
+	FOnSourcesDemo2 OnSourcesDemo2;
+	
 	// Initialization and lifecycle
+	UFUNCTION(BlueprintCallable)
 	void InitializeSources();
+
+	UFUNCTION(BlueprintCallable)
 	void DespawnAllSources();
 
 	// Activation control
+	UFUNCTION(BlueprintCallable)
 	ASource* ActivateNextInactiveSource();
+
+	UFUNCTION(BlueprintCallable)
 	bool ActivateSourceByID(int32 ID);
+
+	UFUNCTION(BlueprintCallable)
 	bool DeactivateSourceByID(int32 ID);
 
 	// Query helpers
+	UFUNCTION(BlueprintCallable)
 	ASource* GetSourceByID(int32 ID) const;
+
+	UFUNCTION(BlueprintCallable)
 	int32 GetNumActive() const;
 	
 protected:
