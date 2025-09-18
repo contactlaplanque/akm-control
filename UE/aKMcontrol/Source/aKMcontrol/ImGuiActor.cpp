@@ -31,6 +31,8 @@ void AImGuiActor::BeginPlay()
 	
 	// Ensure ImGui input is disabled by default so camera controls work
 	FImGuiModule::Get().GetProperties().SetInputEnabled(false);
+
+	FImGuiModule::Get().GetProperties().SetMouseInputShared(true);
 	
 	// Scale ImGui style by 2x (this should be done once)
 	// ImGui::GetStyle().ScaleAllSizes(2.0f);
@@ -84,6 +86,34 @@ void AImGuiActor::Tick(float DeltaTime)
 	
 	FVector2D ViewportSize = FVector2D(GEngine->GameViewport->Viewport->GetSizeXY());
 
+
+
+	// Disable/enable ImGui input based on mouse position over the main view region
+	
+	ImVec2 ImGuiMouse = ImGui::GetMousePos();
+	float MouseX = ImGuiMouse.x;
+	float MouseY = ImGuiMouse.y;
+
+
+	// Precompute view bounds and flags
+	const float Margin = 1.0f; // small hysteresis to avoid flicker at boundaries
+	const float ViewLeft   = (float)MainViewLocalTopLeft.X - Margin;
+	const float ViewTop    = (float)MainViewLocalTopLeft.Y - Margin;
+	const float ViewRight  = (float)(MainViewLocalTopLeft.X + MainViewAbsoluteSize.X) + Margin;
+	const float ViewBottom = (float)(MainViewLocalTopLeft.Y + MainViewAbsoluteSize.Y) + Margin;
+
+
+	bool bInsideX = (MouseX >= ViewLeft) && (MouseX <= ViewRight);
+	bool bInsideY = (MouseY >= ViewTop) && (MouseY <= ViewBottom);
+	bool bMouseOverMainView = bInsideX && bInsideY; // must be inside both axes
+
+	const bool bDesiredImGuiInput = !bMouseOverMainView;
+	if (GetImGuiInput() != bDesiredImGuiInput)
+	{
+		SetImGuiInput(bDesiredImGuiInput);
+	}
+	
+	
 	ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 10.0f);
 	
 	// LEFT PANEL
@@ -143,6 +173,22 @@ void AImGuiActor::Tick(float DeltaTime)
 				ImGui::Text("Inactive: %d", FMath::Max(0, SourcesManager->NumSources - ActiveCount));
 
 				ImGui::Separator();
+
+				if (ImGui::Button("RESET DEMOS"))
+				{
+					SourcesManager->OnResetSourcesDemo.Broadcast();
+				}
+				ImGui::SameLine();
+				if (ImGui::Button("DEMO 1"))
+				{
+					SourcesManager->OnSourcesDemo1.Broadcast();
+				}
+				ImGui::SameLine();
+				if (ImGui::Button("DEMO 2"))
+				{
+					SourcesManager->OnSourcesDemo2.Broadcast();
+				}
+				ImGui::Separator();
 				// List active sources with collapsible headers
 				for (ASource* Src : SourcesManager->Sources)
 				{
@@ -162,34 +208,12 @@ void AImGuiActor::Tick(float DeltaTime)
 						if (ImGui::DragFloat3("Position (cm)", pos, 1.0f,-10000.0f,10000.0f,"%.0f"))
 						{
 							Src->SetPosition(FVector((double)pos[0], (double)pos[1], (double)pos[2]));
-
-							/*
-							//Send OSC
-							const FString address = FString::Printf(TEXT("/source%d/params"), Src->ID);
-							const TArray<float> values = { float(Src->Position.X * 0.01f),
-															float(Src->Position.Y * 0.01f),
-															float(Src->Position.Z * 0.01f),
-															float(Src->Radius * 0.01f),
-															float(Src->A), Src->DelayMultiplier, Src->Reverb };
-							SpatServerManager->SendOSCFloatArray(address,values);
-							*/
 						}
 						
 						float Radius = Src->Radius;
 						if (ImGui::DragFloat("Radius (cm)", &Radius, 1.0f, 0.0f,0.0f, "%.1f"))
 						{
 							Src->SetRadius(Radius);
-
-							/*
-							//Send OSC
-							const FString address = FString::Printf(TEXT("/source%d/params"), Src->ID);
-							const TArray<float> values = { float(Src->Position.X * 0.01f),
-															float(Src->Position.Y * 0.01f),
-															float(Src->Position.Z * 0.01f),
-															float(Src->Radius * 0.01f),
-															float(Src->A), Src->DelayMultiplier, Src->Reverb };
-							SpatServerManager->SendOSCFloatArray(address,values);
-							*/
 						}
 						
 						float color[3];
@@ -209,51 +233,18 @@ void AImGuiActor::Tick(float DeltaTime)
 						if (ImGui::SliderInt("A", &A, 1, 12, "%d"))
 						{
 							Src->SetA(A);
-
-							/*
-							//Send OSC
-							const FString address = FString::Printf(TEXT("/source%d/params"), Src->ID);
-							const TArray<float> values = { float(Src->Position.X * 0.01f),
-															float(Src->Position.Y * 0.01f),
-															float(Src->Position.Z * 0.01f),
-															float(Src->Radius * 0.01f),
-															float(Src->A), Src->DelayMultiplier, Src->Reverb };
-							SpatServerManager->SendOSCFloatArray(address,values);
-							*/
 						}
 
 						float DelayMultiplier = Src->DelayMultiplier;
 						if (ImGui::SliderFloat("Delay Multiplier", &DelayMultiplier, 0.0f, 20.0f, "%.1f"))
 						{
 							Src->SetDelayMultiplier(DelayMultiplier);
-
-							/*
-							//Send OSC
-							const FString address = FString::Printf(TEXT("/source%d/params"), Src->ID);
-							const TArray<float> values = { float(Src->Position.X * 0.01f),
-															float(Src->Position.Y * 0.01f),
-															float(Src->Position.Z * 0.01f),
-															float(Src->Radius * 0.01f),
-															float(Src->A), Src->DelayMultiplier, Src->Reverb };
-							SpatServerManager->SendOSCFloatArray(address,values);
-							*/
 						}
 
 						float Reverb = Src->Reverb;
 						if (ImGui::SliderFloat("Reverb", &Reverb, 0.0f, 1.0f, "%.1f"))
 						{
 							Src->SetReverb(Reverb);
-
-							/*
-							//Send OSC
-							const FString address = FString::Printf(TEXT("/source%d/params"), Src->ID);
-							const TArray<float> values = { float(Src->Position.X * 0.01f),
-															float(Src->Position.Y * 0.01f),
-															float(Src->Position.Z * 0.01f),
-															float(Src->Radius * 0.01f),
-															float(Src->A), Src->DelayMultiplier, Src->Reverb };
-							SpatServerManager->SendOSCFloatArray(address,values);
-							*/
 						}
 					}
 					
@@ -312,6 +303,21 @@ void AImGuiActor::Tick(float DeltaTime)
 	ImGui::PopStyleColor();
 	ImGui::PopStyleVar(2);
 
+	// Keyboard Hints
+
+	ImGui::SetNextWindowPos(ImVec2(ViewportSize.X - 520, 20));
+	ImGui::SetNextWindowSize(ImVec2(500, 140));
+	
+	ImGui::Begin("Keyboard Hints", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar);
+	ImGui::SetWindowFontScale(0.8f);
+	ImGui::Text("Use Z,Q,S,D to move in the scene");
+	ImGui::Text("Use A,E to move up and down");
+	ImGui::Text("Click on the center of a source to select");
+	ImGui::Text("Press C or click away to clear selection");
+	ImGui::SetWindowFontScale(1.0f);
+	ImGui::End();
+	
+
 
     // Scale ImGui font by 2x (apply every frame to ensure it takes effect)
     // ImGui::GetIO().FontGlobalScale = 2.0f;
@@ -342,29 +348,23 @@ void AImGuiActor::Tick(float DeltaTime)
 			}
 		}
 	}
-	
-	
-	
+
 	
 
-	// Disable ImGui input if mouse is over main view
-	if (ImGui::IsMousePosValid())
-	{
-		bool isMouseXinRange = MainViewLocalTopLeft.X <= ImGui::GetMousePos().x && ImGui::GetMousePos().x <= MainViewLocalTopLeft.X + MainViewLocalSize.X;
-		bool isMouseYinRange = MainViewLocalTopLeft.Y <= ImGui::GetMousePos().y && ImGui::GetMousePos().y <= MainViewLocalTopLeft.Y + MainViewLocalSize.Y;
-		if (isMouseXinRange || isMouseYinRange)
-		{
-			SetImGuiInput(false);
-		}
-	}
+
+	
 	
 }
 
 
 void AImGuiActor::SetImGuiInput(bool NewState)
 {
-	//FImGuiModule::Get().GetProperties().ToggleInput();
 	FImGuiModule::Get().GetProperties().SetInputEnabled(NewState);
+}
+
+bool AImGuiActor::GetImGuiInput() const
+{
+	return FImGuiModule::Get().GetProperties().IsInputEnabled();
 }
 
 void AImGuiActor::RenderBottomBar(float DeltaTime) const
@@ -408,7 +408,7 @@ void AImGuiActor::RenderBottomBar(float DeltaTime) const
 	    ImGui::PushStyleColor(ImGuiCol_TableBorderLight,  ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
 
 	    // Table
-	    if (ImGui::BeginTable("App_info", 4, TableFlags, ImGui::GetContentRegionAvail()))
+	    if (ImGui::BeginTable("App_info", 5, TableFlags, ImGui::GetContentRegionAvail()))
 	    {
 	        ImGui::TableNextRow();
 
@@ -426,6 +426,12 @@ void AImGuiActor::RenderBottomBar(float DeltaTime) const
 
 	        ImGui::TableNextColumn();
 	        ImGui::Text("Frame Time: %.2f ms", FrameTime);
+
+	    	ImGui::TableNextColumn();
+	    	if (ImGui::SmallButton("QUIT APP"))
+	    	{
+	    		GetWorld()->GetFirstPlayerController()->ConsoleCommand("quit");
+	    	}
 
 	        ImGui::EndTable();
 	    }
@@ -849,7 +855,7 @@ void AImGuiActor::RenderGeneralServerParametersWindow() const
 	ImGui::SetWindowFontScale(0.8f);
 	
 	ImVec2 AvailableSize = ImGui::GetContentRegionAvail();
-	ImGui::BeginChild("ServerGainAndReverb",ImVec2(AvailableSize.x * 0.5f - 10,200 ));
+	ImGui::BeginChild("ServerGainAndReverb",ImVec2(AvailableSize.x * 0.5f - 10,300 ));
 
 	ImGui::Text("Main Gain");
 	ImGui::SliderFloat("Gain", &SpatServerManager->systemGain, -90.0f, 30.0f, "%.1f dB");
@@ -882,7 +888,7 @@ void AImGuiActor::RenderGeneralServerParametersWindow() const
 	ImGui::EndChild();
 	ImGui::SameLine();
 
-	ImGui::BeginChild("ServerSatsAndSubsFilters",ImVec2(AvailableSize.x * 0.5f - 10,200));
+	ImGui::BeginChild("ServerSatsAndSubsFilters",ImVec2(AvailableSize.x * 0.5f - 10,300));
 	
 	ImGui::Text("Satellites Filter");
 	ImGui::PushID("SatsFilterFrequency");
@@ -944,26 +950,47 @@ void AImGuiActor::RenderSpeakersParametersWindow() const
 	ImVec2 AvailableSize = ImGui::GetContentRegionAvail();
 	ImGui::BeginChild("SpeakersGain", ImVec2(AvailableSize.x, 0.0f));
 	ImGui::Text("Satellites Gain");
-
-	for (int i=0;i<12;i++)
+	ImGui::PushStyleVar(ImGuiStyleVar_GrabMinSize, 50);
+	ImVec2 sliderSize = ImVec2(50, 160);
+	for (int i = 0; i < 12; i++)
 	{
-		ImGui::Text("SAT %d",i+1);
+		if (i > 0) ImGui::SameLine();
 		ImGui::PushID(i);
-		ImGui::SliderFloat("Gain", &SpatServerManager->satsGains[i], -90.0f, 30.0f, "%.1f dB");
+		ImGui::BeginGroup();
+		ImGui::Text("%2d", i + 1);
+		ImGui::VSliderFloat("##gain", sliderSize, &SpatServerManager->satsGains[i], -90.0f, 30.0f, "%.0f\ndB");
 		if (ImGui::IsItemEdited())
 		{
-			const FString address = "/sat"+FString::FromInt(i+1)+"/gain";
-			SpatServerManager->SendOSCFloat(address,SpatServerManager->satsGains[i]);
+			const FString address = "/sat" + FString::FromInt(i + 1) + "/gain";
+			SpatServerManager->SendOSCFloat(address, SpatServerManager->satsGains[i]);
 		};
+		ImGui::EndGroup();
 		ImGui::PopID();
 	}
+
+	ImGui::Separator();
+	ImGui::Text("Subwoofers Gain");
+	for (int i = 0; i < 2; i++)
+	{
+		if (i > 0) ImGui::SameLine();
+		ImGui::PushID(100 + i);
+		ImGui::BeginGroup();
+		ImGui::Text("%2d", i + 1);
+		ImGui::VSliderFloat("##gain", sliderSize, &SpatServerManager->subsGains[i], -90.0f, 30.0f, "%.0f\ndB");
+		if (ImGui::IsItemEdited())
+		{
+			const FString address = "/sub" + FString::FromInt(i + 1) + "/gain";
+			SpatServerManager->SendOSCFloat(address, SpatServerManager->subsGains[i]);
+		};
+		ImGui::EndGroup();
+		ImGui::PopID();
+	}
+	ImGui::PopStyleVar();
 	
 	ImGui::EndChild();
 
 	ImGui::SetWindowFontScale(1.0f);
 }
-
-
 void AImGuiActor::OnNewJackClient(const FString& ClientName, int32 NumInputs, int32 NumOutputs)
 {
 	// Ignore scsynth (handled by manager) and our own Unreal client

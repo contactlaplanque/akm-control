@@ -44,6 +44,9 @@ public:
 	UFUNCTION(BlueprintCallable)
 	static void SetImGuiInput(bool NewState);
 
+	UFUNCTION(BlueprintCallable)
+	bool GetImGuiInput() const;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="ImGui")
 	FVector2D MainViewLocalTopLeft;
 
