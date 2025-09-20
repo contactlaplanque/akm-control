@@ -6,6 +6,8 @@ Controller & Visualizer for the aKM spatial audio system (Unreal Engine 5.6)
 
 Pre-release prototype.
 
+![aKMControl-gif](https://github.com/user-attachments/assets/57e9abc3-dc86-448e-af25-cb00854a5ade)
+
 ---
 
 ## Table of Contents
