@@ -305,16 +305,14 @@ void AImGuiActor::Tick(float DeltaTime)
 
 	// Keyboard Hints
 
-	ImGui::SetNextWindowPos(ImVec2(ViewportSize.X - 520, 20));
-	ImGui::SetNextWindowSize(ImVec2(500, 140));
+	ImGui::SetNextWindowPos(ImVec2(ViewportSize.X - 320, 20));
+	ImGui::SetNextWindowSize(ImVec2(300, 90));
 	
 	ImGui::Begin("Keyboard Hints", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar);
-	ImGui::SetWindowFontScale(0.8f);
 	ImGui::Text("Use Z,Q,S,D to move in the scene");
 	ImGui::Text("Use A,E to move up and down");
 	ImGui::Text("Click on the center of a source to select");
 	ImGui::Text("Press C or click away to clear selection");
-	ImGui::SetWindowFontScale(1.0f);
 	ImGui::End();
 	
 
@@ -450,7 +448,7 @@ void AImGuiActor::RenderAkMServerWindow() const
 	if (SpatServerManager != nullptr)
 	{
 
-		ImGui::BeginChild("akM_Server",ImVec2(0,400),true,ImGuiChildFlags_Borders);
+		ImGui::BeginChild("akM_Server",ImVec2(0,200),true,ImGuiChildFlags_Borders);
 
 		bool bServerAlive = SpatServerManager->bIsServerAlive;
 		bool bServerIsStarting = SpatServerManager->bServerIsStarting;
@@ -530,7 +528,7 @@ void AImGuiActor::RenderAkMServerWindow() const
 		ImGui::Separator();
 
 		// Scrollable child region
-		ImGui::SetWindowFontScale(0.7f);
+		ImGui::SetWindowFontScale(0.9f);
 		ImGui::BeginChild("ConsoleRegion", ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
 
 		for (const FString& Line : SpatServerManager->ImGuiConsoleBuffer)
@@ -568,8 +566,8 @@ void AImGuiActor::RenderAudioMonitoringWindow() const
 	}
 
 	// Layout constants
-	const float MeterWidth = 14.0f;
-	const float MeterSpacing = 10.0f;
+	const float MeterWidth = 10.0f;
+	const float MeterSpacing = 8.0f;
 	const float GroupPadding = 4.0f;
 
 	const ImVec2 avail = ImGui::GetContentRegionAvail();
@@ -636,12 +634,12 @@ void AImGuiActor::RenderAudioMonitoringWindow() const
 	{
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(5, 5));
 		ImGui::BeginChild("SpeakersOutputChild", ImVec2(0, sectionHeight), true, ImGuiWindowFlags_HorizontalScrollbar);
-		ImGui::SetWindowFontScale(0.7f);
+		ImGui::SetWindowFontScale(1.0f);
 
 		const TArray<int32>& UnrealInputsFromSc = SpatServerManager->ConnectedUnrealInputIndicesFromScsynth;
 		const int32 totalPorts = UnrealInputsFromSc.Num();
 		const int32 numGroups = FMath::DivideAndRoundUp(totalPorts, 3);
-		const float meterHeight = 120.0f;
+		const float meterHeight = 80.0f;
 
 		ImGui::Text("SPEAKERS OUTPUT");
 
@@ -722,7 +720,7 @@ void AImGuiActor::RenderAudioMonitoringWindow() const
 	{
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(5, 5));
 		ImGui::BeginChild("SourcesInputChild", ImVec2(0, sectionHeight), true, ImGuiWindowFlags_HorizontalScrollbar);
-		ImGui::SetWindowFontScale(0.7f);
+		ImGui::SetWindowFontScale(1.0f);
 
 		// Prepare groups (max 4 meters per group) ordered by client name
 		TArray<FString> ClientNames;
@@ -753,7 +751,7 @@ void AImGuiActor::RenderAudioMonitoringWindow() const
 			}
 		}
 		
-		const float meterHeight = 120.0f;
+		const float meterHeight = 80.0f;
 
 		ImGui::Text("AUDIO SOURCES INPUTS");
 
@@ -835,7 +833,7 @@ void AImGuiActor::RenderInternalLogsWindow() const
             InternalLogCapture->GetSnapshot(Copy);
         }
 
-    	ImGui::SetWindowFontScale(0.7f);
+    	ImGui::SetWindowFontScale(0.9f);
         ImGui::BeginChild("InternalLogRegion", ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
         for (const FString& Line : Copy)
         {
@@ -852,10 +850,10 @@ void AImGuiActor::RenderInternalLogsWindow() const
 void AImGuiActor::RenderGeneralServerParametersWindow() const
 {
 
-	ImGui::SetWindowFontScale(0.8f);
+	ImGui::SetWindowFontScale(1.0f);
 	
 	ImVec2 AvailableSize = ImGui::GetContentRegionAvail();
-	ImGui::BeginChild("ServerGainAndReverb",ImVec2(AvailableSize.x * 0.5f - 10,300 ));
+	ImGui::BeginChild("ServerGainAndReverb",ImVec2(AvailableSize.x * 0.5f - 10,150 ));
 
 	ImGui::Text("Main Gain");
 	ImGui::SliderFloat("Gain", &SpatServerManager->systemGain, -90.0f, 30.0f, "%.1f dB");
@@ -888,7 +886,7 @@ void AImGuiActor::RenderGeneralServerParametersWindow() const
 	ImGui::EndChild();
 	ImGui::SameLine();
 
-	ImGui::BeginChild("ServerSatsAndSubsFilters",ImVec2(AvailableSize.x * 0.5f - 10,300));
+	ImGui::BeginChild("ServerSatsAndSubsFilters",ImVec2(AvailableSize.x * 0.5f - 10,150));
 	
 	ImGui::Text("Satellites Filter");
 	ImGui::PushID("SatsFilterFrequency");
@@ -942,16 +940,16 @@ void AImGuiActor::RenderGeneralServerParametersWindow() const
 
 void AImGuiActor::RenderSpeakersParametersWindow() const
 {
-	ImGui::SetWindowFontScale(0.8f);
+	ImGui::SetWindowFontScale(1.0f);
 	
 	// Ensure we start on a new line after any previous SameLine() usage
 	ImGui::NewLine();
 
 	ImVec2 AvailableSize = ImGui::GetContentRegionAvail();
-	ImGui::BeginChild("SpeakersGain", ImVec2(AvailableSize.x, 0.0f));
+	ImGui::BeginChild("SpeakersGain", ImVec2(AvailableSize.x, 300));
 	ImGui::Text("Satellites Gain");
-	ImGui::PushStyleVar(ImGuiStyleVar_GrabMinSize, 50);
-	ImVec2 sliderSize = ImVec2(50, 160);
+	ImGui::PushStyleVar(ImGuiStyleVar_GrabMinSize, 20);
+	ImVec2 sliderSize = ImVec2(20, 90);
 	for (int i = 0; i < 12; i++)
 	{
 		if (i > 0) ImGui::SameLine();

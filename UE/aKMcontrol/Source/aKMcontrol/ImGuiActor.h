@@ -90,7 +90,7 @@ private:
 	// Helper to draw popup
 	void DrawNewClientPopup();
 
-	int BottomBarHeight = 30;
+	int BottomBarHeight = 20;
 	
 	// Internal logs capture device
 	TUniquePtr<FAkMInternalLogCapture> InternalLogCapture;
