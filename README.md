@@ -15,6 +15,7 @@ Pre-release prototype.
 - [Overview / Presentation](#overview)
 - [Installation](#installation)
 - [Dependencies](#dependencies)
+- [Screenshots](#screenshots)
 - [Prerequisites](#prerequisites)
 - [Using the pre-built executable](#using-the-pre-built-executable)
 - [Clone & Build](#clone--build)
@@ -69,15 +70,26 @@ Additionally, the project includes a custom plugin also developed by laplanque f
 
 - If you plan to build locally the project, make sure to have an operational Unreal Engine development setup with the right set of Visual Studio Build Tools, Windows SDK, .NET SDK, recommended by Epic. Many tutorials exist out there to setup such an environment.
 
+## Screenshots
+
+<img width="2804" height="1660" alt="aKMControl-Screenshot" src="https://github.com/user-attachments/assets/2187d1fa-29ad-4b78-b0ea-80503ddfbd19" />
+<img width="3360" height="2017" alt="aKMControl-Screenshot-UE" src="https://github.com/user-attachments/assets/c2f7b6f0-0b12-437f-a1a0-9a131c39b612" />
+
 ## Using the pre-built executable
 
 ### Setup
 
-UPDATE SETUP INSTRUCTIONS ONCE THE BUILD IS DONE
+1) Go to the release page: [aKMControl-v0.1.0](https://github.com/contactlaplanque/akm-control/releases/tag/v0.1.0)
+2) Make sure that the pre-requisites are installed on your machine (JACK for Windows, SuperCollider, aKMServer). These are linked on the release page.
+3) Download the .zip archive on the release
+4) Unzip the file
+5) Start aKMControl by double-clicking on `aKMControl.exe`
 
 ### Usage 
 
-ADD LINK TO DEMO VIDEO
+[Video: Introduction](https://youtu.be/GbSd6QqimfQ)
+
+[Video: Demonstration](https://youtu.be/T23ct6W0kBA)
 
 ## Clone & Build
 
